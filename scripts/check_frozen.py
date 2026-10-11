@@ -17,9 +17,12 @@ exe = Path("dist/HeyTapFirmwareEQStudio/HeyTapFirmwareEQStudio.exe").resolve()
 report = Path("reports/frozen-startup.json").resolve()
 report.parent.mkdir(exist_ok=True)
 report.unlink(missing_ok=True)
+# Windowed interpreters may not have stderr during their early initialization.
+child_env = os.environ.copy()
+child_env.pop("PYTHONFAULTHANDLER", None)
 started = time.perf_counter()
 process = subprocess.run([str(exe), "--smoke-test", "--report", str(report)],
-                         timeout=60, capture_output=True, text=True, errors="replace")
+                         timeout=60, capture_output=True, text=True, errors="replace", env=child_env)
 elapsed = time.perf_counter()-started
 if process.returncode:
     print(process.stdout)

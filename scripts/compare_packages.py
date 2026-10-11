@@ -30,11 +30,20 @@ def matching_outputs(before, after):
 def run(exe, name, folder, index):
     folder.mkdir(parents=True, exist_ok=True)
     result = {}
+    child_env = os.environ.copy()
+    child_env.pop("PYTHONFAULTHANDLER", None)
     for flag, label in (("--smoke-test", "startup"), ("--benchmark", "benchmark")):
         report = (folder/f"{label}-{index}.json").resolve()
         report.unlink(missing_ok=True)
         started = time.perf_counter()
-        subprocess.run([str(exe), flag, "--report", str(report)], check=True, timeout=180)
+        process = subprocess.run([str(exe), flag, "--report", str(report)], timeout=180,
+                                 capture_output=True, text=True, errors="replace", env=child_env)
+        if process.returncode:
+            print(process.stdout)
+            print(process.stderr)
+            if report.is_file():
+                print(report.read_text(encoding="utf-8"))
+            process.check_returncode()
         elapsed = time.perf_counter()-started
         data = json.loads(report.read_text(encoding="utf-8"))
         assert data["status"] == "passed" and data["frozen"] and data["packager"] == name
