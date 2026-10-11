@@ -25,8 +25,9 @@ def test_graph_takes_the_height_freed_by_the_workflow_rail(tmp_path, qt_app):
     assert wait(qt_app, lambda: window.main_plot.is_ready)
     window.set_measurements([Measurement("Flat", [20, 1000, 20000], [80, 90, 80]).validate()])
     received = []
+    # The page applies payloads asynchronously; wait until the measurement's legend has arrived.
     assert wait(qt_app, lambda: (window.main_plot.inspect(received.append), received and received[-1]
-                                 and received[-1]["height"] > 0)[1], delay=50)
+                                 and received[-1]["height"] > 0 and received[-1]["legend"] >= 2)[1], delay=50)
     web = received[-1]
     # The previous layout left 253-258 px for the graph at this size.
     assert web["height"] >= 420, web
