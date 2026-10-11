@@ -1,12 +1,17 @@
 name: Desktop checks and Windows packages
 on:
+  # Every branch is checked so forks get feedback; the long Windows packaging runs only
+  # for the main development branch, pull requests and manual runs (see windows-package).
   push:
-    branches: [feat/python-desktop-studio]
+    branches: ['**']
     paths-ignore:
       - 'docs/**'
       - 'README.md'
+      - 'CLAUDE.md'
+      - 'HANDOFF_*.md'
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -21,6 +26,8 @@ env:
   HEYTAP_BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   check:
+    # Same-repository pull requests are already covered by their push run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +47,7 @@ jobs:
       - name: Build local graph assets
         working-directory: frontend
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
           npm test
       - name: Browser interaction checks
@@ -120,6 +127,7 @@ jobs:
           path: reports/
   windows-package:
     needs: check
+    if: github.event_name != 'push' || github.ref_name == 'feat/python-desktop-studio'
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +147,7 @@ jobs:
       - name: Build local graph assets
         working-directory: frontend
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
       - name: Clean virtual environment
         shell: bash
