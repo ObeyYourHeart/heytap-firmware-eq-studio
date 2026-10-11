@@ -719,7 +719,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._task(lambda: self.flowmix_client.target(identifier), received, network=True)
 
     def import_target(self):
-        path = self._choose("导入目标频响", "测量 (*.csv *.json *.har)")
+        path = self._choose("导入目标频响", "测量 (*.csv *.txt *.frd *.json *.har)")
         if path:
             self._task(lambda: load_measurements(path), self.set_targets)
 
@@ -1042,7 +1042,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage("仅显示候选参数和可能指针；没有赋予名称或写入权限。")
 
     def import_eq(self):
-        path = self._choose("导入 EQ", "EQ 文本 (*.txt);;所有文件 (*)")
+        path = self._choose("导入 EQ", "EQ 文本（Flowmix / GraphicEQ / Equalizer APO）(*.txt);;所有文件 (*)")
         if path:
             self._task(lambda: load_eq(path), self.set_document)
 
@@ -1052,7 +1052,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._changed()
 
     def import_measurements(self):
-        path = self._choose("导入人工耳测量", "测量 (*.csv *.json *.har)")
+        path = self._choose("导入人工耳测量", "测量 (*.csv *.txt *.frd *.json *.har)")
         if path:
             self._task(lambda: load_measurements(path), self.set_measurements)
 

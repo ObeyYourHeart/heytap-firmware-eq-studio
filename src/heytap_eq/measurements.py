@@ -89,17 +89,59 @@ def parse_har(data):
     return results
 
 
+FREQUENCY_COLUMNS = ("frequency_hz", "frequency", "frequencies", "freq", "hz")
+# AutoEQ measurement and target CSVs name the response column "raw".
+SPL_COLUMNS = ("spl_db", "spl", "spl_values", "raw", "db", "magnitude")
+
+
+def column_name(value):
+    """Header names without units, so REW "Freq(Hz)" and "SPL(dB)" match."""
+    value = re.sub(r"[(\[][^)\]]*[)\]]", "", value).strip().casefold()
+    return re.sub(r"\s+", "_", value)
+
+
+def parse_table(text, title):
+    """CSV / REW / squig.link / FRD numeric text: a header row is optional."""
+    rows = []
+    delimiter = columns = None
+    for number, original in enumerate(text.lstrip("\ufeff").splitlines(), 1):
+        line = original.strip()
+        if not line or line.startswith(("*", "#", ";", "//")):
+            continue  # REW and FRD prefix descriptions with "*".
+        if delimiter is None:
+            delimiter = next((d for d in (";", "\t", ",") if d in line), " ")
+        fields = (next(csv.reader([line], delimiter=delimiter)) if delimiter != " "
+                  else line.split())
+        fields = [f.strip() for f in fields]
+        if delimiter != ",":
+            fields = [f.replace(",", ".") for f in fields]  # Decimal commas are unambiguous here.
+        if columns is None:
+            try:
+                [float(f) for f in fields[:2]]
+            except ValueError:
+                if delimiter == " ":  # Keep "Frequency [Hz]" as one whitespace-separated name.
+                    fields = re.sub(r"[(\[][^)\]]*[)\]]", " ", line).split()
+                names = [column_name(f) for f in fields]
+                frequency = next((names.index(x) for x in FREQUENCY_COLUMNS if x in names), None)
+                spl = next((names.index(x) for x in SPL_COLUMNS if x in names), None)
+                if frequency is None or spl is None:
+                    raise ValueError("Measurement needs frequency and SPL columns "
+                                     "(frequency_hz/spl_db, AutoEQ frequency/raw) or two numbers")
+                columns = (frequency, spl)
+                continue
+            columns = (0, 1)
+        try:
+            rows.append((float(fields[columns[0]]), float(fields[columns[1]])))
+        except (ValueError, IndexError):
+            raise ValueError(f"Malformed measurement row {number}: {line[:80]}") from None
+    if not rows:
+        raise ValueError("No measurement rows found")
+    return Measurement(title, [r[0] for r in rows], [r[1] for r in rows]).validate()
+
+
 def load_measurements(path):
     path = Path(path)
-    if path.suffix.lower() == ".csv":
-        with path.open(encoding="utf-8-sig", newline="") as f:
-            reader = csv.DictReader(f)
-            names = reader.fieldnames or []
-            frequency = next((x for x in ("frequency_hz", "frequency", "frequencies") if x in names), None)
-            spl = next((x for x in ("spl_db", "spl", "spl_values") if x in names), None)
-            if frequency is None or spl is None:
-                raise ValueError("CSV needs frequency_hz and spl_db columns")
-            points = [(float(r[frequency]), float(r[spl])) for r in reader]
-        return [Measurement(path.stem, [p[0] for p in points], [p[1] for p in points]).validate()]
+    if path.suffix.lower() in (".csv", ".txt", ".frd"):
+        return [parse_table(path.read_text(encoding="utf-8-sig"), path.stem)]
     data = json.loads(path.read_text(encoding="utf-8-sig"))
     return parse_har(data) if path.suffix.lower() == ".har" else parse_json(data)

@@ -9,6 +9,19 @@ from pathlib import Path
 KINDS = ("PEAK", "LS", "HS", "LP", "HP", "NOTCH", "BAND_PASS", "ALL_PASS")
 ALIASES = {"PK": "PEAK", "LOW_SHELF": "LS", "HIGH_SHELF": "HS",
            "LOW_PASS": "LP", "HIGH_PASS": "HP", "AP": "ALL_PASS", "BP": "BAND_PASS"}
+SECTIONS = ("[RAW]", "[PEQ]", "[METADATA]")
+# Equalizer APO / AutoEQ ParametricEQ / REW "Generic" text. Only the explicit-Q forms are
+# accepted: shelves use the RBJ midpoint frequency, as the firmware coefficients do, while
+# corner-frequency, slope and bandwidth variants have other semantics and are rejected.
+APO_LINE = re.compile(r"(?:preamp|filter\s*\d*)\s*:", re.I)
+APO_ROUTING = re.compile(r"(?:(?:channel|device|include|copy|convolution|delay|stage|eval|if|elseif"
+                         r"|loudnesscorrection)\s*:|(?:else|endif)\s*$)", re.I)
+APO_NUMBER = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?)"
+APO_FILTER = re.compile(rf"(ON|OFF)\s+([A-Z]+)\s+Fc\s+{APO_NUMBER}\s*Hz"
+                        rf"(?:\s+Gain\s+{APO_NUMBER}\s*dB)?(?:\s+Q\s+{APO_NUMBER})?", re.I)
+APO_KINDS = {"PK": "PEAK", "PEQ": "PEAK", "MODAL": "PEAK", "LS": "LS", "LSC": "LS",
+             "HS": "HS", "HSC": "HS", "LP": "LP", "LPQ": "LP", "HP": "HP", "HPQ": "HP",
+             "BP": "BAND_PASS", "NO": "NOTCH", "AP": "ALL_PASS"}
 
 
 @dataclass
@@ -74,20 +87,82 @@ class EQDocument:
         return obj
 
 
+def graphic_points(value):
+    points = []
+    for pair in value.split(";"):
+        if pair.strip():
+            fields = pair.split()
+            if len(fields) != 2:
+                raise ValueError("GraphicEQ point must be frequency and gain")
+            points.append([float(x) for x in fields])
+    return points
+
+
+def parse_apo(lines, name):
+    """Single-channel Equalizer APO text; IDs follow file order since APO ignores numbers."""
+    doc = EQDocument(name=name)
+    graphic_seen = started = False
+    preamp = None
+    for line in lines:
+        if APO_ROUTING.match(line):
+            raise ValueError(f"Unsupported Equalizer APO command: {line[:80]}")
+        if not started and not APO_LINE.match(line) and not line.lower().startswith("graphiceq:"):
+            continue  # REW filter exports start with a free-form description.
+        started = True
+        key, _, value = (s.strip() for s in line.partition(":"))
+        if key.upper() == "GRAPHICEQ":
+            if graphic_seen:
+                raise ValueError("Duplicate GraphicEQ line")
+            graphic_seen = True
+            doc.raw = graphic_points(value)
+        elif key.upper() == "PREAMP":
+            match = re.fullmatch(APO_NUMBER+r"\s*dB", value, re.I)
+            if not match:
+                raise ValueError(f"Malformed Equalizer APO preamp: {value[:80]}")
+            preamp = (preamp or 0.)+float(match[1])
+        elif APO_LINE.match(line):
+            if re.fullmatch(r"(?:ON|OFF)\s+NONE", value, re.I):
+                continue  # REW lists unused filter slots as "OFF None".
+            match = APO_FILTER.fullmatch(value)
+            kind = APO_KINDS.get(match[2].upper()) if match else None
+            if kind is None:
+                raise ValueError(f"Unsupported Equalizer APO filter: {value[:80]}")
+            enabled, _, frequency, gain, q = match.groups()
+            if q is None:
+                raise ValueError(f"Equalizer APO filter needs an explicit Q: {value[:80]}")
+            takes_gain = kind in ("PEAK", "LS", "HS")
+            if takes_gain and gain is None:
+                raise ValueError(f"Equalizer APO filter needs a gain: {value[:80]}")
+            if not takes_gain and float(gain or 0) != 0:
+                raise ValueError(f"Equalizer APO {kind} filter does not take a gain: {value[:80]}")
+            doc.filters.append(Filter(len(doc.filters)+1, float(frequency), float(gain or 0),
+                                      float(q), kind, enabled.upper() == "ON"))
+        else:
+            raise ValueError(f"Unsupported Equalizer APO line: {line[:80]}")
+    if preamp is not None:
+        doc.metadata["PREAMP_DB"] = f"{preamp:.9g}"
+    return doc
+
+
 def parse_text(text: str, name="Imported EQ") -> EQDocument:
+    lines = [s for s in (x.strip() for x in text.lstrip("\ufeff").splitlines())
+             if s and not s.startswith(("#", ";"))]
+    if not any(s.upper() in SECTIONS for s in lines) and any(APO_LINE.match(s) for s in lines):
+        doc = parse_apo(lines, name)
+        if not doc.raw and not doc.filters:
+            raise ValueError("No EQ points or filters found")
+        doc.validate()
+        return doc
     doc = EQDocument(name=name)
     graphic_seen = False
     started = False
     metadata = {}
-    for original in text.lstrip("\ufeff").splitlines():
-        line = original.strip()
-        if not line or line.startswith(("#", ";")):
-            continue
+    for line in lines:
         if not started and not line.startswith("[") and not line.lower().startswith("graphiceq:"):
             continue  # Flowmix exports include a decorative preamble before the first section.
         started = True
         if line.startswith("["):
-            if line.upper() not in ("[RAW]", "[PEQ]", "[METADATA]"):
+            if line.upper() not in SECTIONS:
                 raise ValueError(f"Unsupported section: {line}")
             continue
         if ":" not in line:
@@ -98,12 +173,7 @@ def parse_text(text: str, name="Imported EQ") -> EQDocument:
             if graphic_seen:
                 raise ValueError("Duplicate GraphicEQ line")
             graphic_seen = True
-            for pair in value.split(";"):
-                if pair.strip():
-                    fields = pair.split()
-                    if len(fields) != 2:
-                        raise ValueError("GraphicEQ point must be frequency and gain")
-                    doc.raw.append([float(x) for x in fields])
+            doc.raw = graphic_points(value)
         elif re.fullmatch(r"PEQ\d+", key):
             fields = value.split()
             if len(fields) not in (3, 4):
