@@ -339,3 +339,14 @@ RAR 解压实际名称和哈希已重新核对：113 的整包 SHA256 为 `ee867
 ### 当前阶段最终验证
 
 `546ea97fa20255a0f368a6e2b593b076df002809` 的 Actions https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/37785516338 全部成功：Linux/Windows 各 25 项测试、Ruff、源码启动、Windows 包与实际冻结启动。此前线程崩溃的回归测试已在两平台通过。最终冻结报告与截图已下载核对，详见 `docs/desktop-validation.json`。对应源码已提交，无依赖旧 scratch 的工作成果。
+
+
+### Windows 双打包已完成（2026-10-11）
+
+代码 `e62d5d161d4436146ec9cd71b653c7050ba32214` 的 [Actions](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655) 全部成功：Linux / Windows 各 53 项测试、无跳过，两个真实 EXE 的启动、统一图表、内置参考和共享认证均验证通过。沿用 `feat/python-desktop-studio` 和 draft PR #1，未合并 main。
+
+同一 workflow 的 matrix 生成 PyInstaller 6.13.0 / Nuitka 4.2 便携包。Nuitka 使用 MSVC，PySide6 插件，standalone 目录，编译缓存已保存；包内保留完整 DLL 和本地资源。运行时识别同时支持 `sys.frozen` 与 `__compiled__`，两者都读取 EXE 旁独立配置；保留用户现有默认 Bearer，未以本地旧文件覆盖。
+
+同一台 runner 预热后交替三轮，数值结果一致：Nuitka ZIP 小约 15%，启动探针从 2.17 s 到 1.92 s，频响和拟合基本持平。Nuitka 本轮冷构建约 20 分钟，PyInstaller 约 35 秒（分别在两台构建 runner，仅记录成本）。启动探针包含 1 秒等待，不代表首帧时间；不把该基准解释成绘图帧率或耳机 DSP 性能。
+
+[PyInstaller 包](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655/artifacts/11688863706) · [Nuitka 包](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655/artifacts/11689701578) · [实测和验证](packaging-results.md) · [构建说明](windows-packaging.md)

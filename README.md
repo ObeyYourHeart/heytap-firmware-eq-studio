@@ -24,7 +24,7 @@ python -m pip install --no-deps --no-build-isolation -e .
 python -m heytap_eq.app
 ```
 
-Windows 可下载 [当前便携包](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38061458404/artifacts/11673506072)，解开产物内的 ZIP，运行 EXE 并保留 `_internal`。用户已在 `b23c92f` 内置共享认证，新成品自动连接测量服务，在原始频响区域直接选择来源／品牌／型号，无需 APK 或 Action Secret；配置文件/环境变量仍可覆写默认值。详细操作见 [本地验证步骤](docs/local-checks.md)，测量和拟合见 [说明](docs/measurement-fitting.md)。
+Windows 可下载同一源码的 [PyInstaller 便携包（230 MB）](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655/artifacts/11688863706) 或 [Nuitka 便携包（195 MB）](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655/artifacts/11689701578)，解开产物内的 ZIP，保留完整目录并运行 EXE。用户已在 `b23c92f` 内置共享认证，新成品自动连接测量服务，在原始频响区域直接选择来源／品牌／型号，无需 APK 或 Action Secret；配置文件/环境变量仍可覆写默认值。详细操作见 [本地验证步骤](docs/local-checks.md)，测量和拟合见 [说明](docs/measurement-fitting.md)，两种构建和实测比较见 [双打包结果](docs/packaging-results.md)。
 
 ## 接手开发
 
@@ -49,7 +49,9 @@ python eq_tool.py inspect examples/Technics-AZ80-Optimized.txt
 
 ## 当前桌面验证
 
-当前统一工作区代码 `b1b931097d18b5789825c93e26267710d7dd8764` 的 [Actions](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38061458404) 全部成功：Linux / Windows 各 49 项 Python 检查，无跳过；Ruff、3 项前端坐标检查、Chromium 实际鼠标交互、Qt WebChannel 编辑和 Windows 冻结 EXE 启动均通过。已核对源码与冻结截图，三条 SVG 曲线共用主图，小屏图形高度 253 px。冻结报告确认六组内置参考配置、工程 v4、共享认证可读取，APK 依赖为 false。见 [本轮验证](docs/unified-validation.json) 和 [使用说明](docs/unified-workspace.md)。
+当前代码 `e62d5d161d4436146ec9cd71b653c7050ba32214` 的 [Actions](https://github.com/uselessbug/heytap-firmware-eq-studio/actions/runs/38104329655) 全部成功：Linux / Windows 各 53 项 Python 检查，无跳过；Ruff、3 项前端坐标检查、Chromium 实际鼠标交互、Qt WebChannel 编辑，以及 PyInstaller / Nuitka 两个真实 EXE 启动均通过。两份成品截图字节一致，三条 SVG 曲线共用主图，小屏图形高度 253 px。报告确认六组内置参考配置、工程 v4、共享认证可读取，APK 依赖为 false。
+
+两份 EXE 已在同一台 Windows runner 上预热后交替测三轮，计算结果一致。Nuitka 的 ZIP 约小 15%，启动探针从 2.17 s 降到 1.92 s，频响计算与拟合基本持平。原生数值库与 JavaScript 图形编辑器保持相同。见 [本轮验证](docs/packaging-validation.json)、[实测范围](docs/packaging-results.md) 和 [使用说明](docs/unified-workspace.md)；[统一工作区阶段记录](docs/unified-validation.json) 保留原始验证范围。
 
 GUI 的“完整预设拟合 → 版本修改 → 导出 → 重开 → 工程恢复”已通过；getter 000..999 的对齐/未对齐写入独立仿真 2,000 次。主功能和真实输入验证的原始来源提交为 `8878dfd`，见 [记录](docs/firmware-edit-validation.json)；[此前测量阶段记录](docs/desktop-validation.json) 保留其原始范围。实际测量配置已验证六个来源和 21 条目标。
 
