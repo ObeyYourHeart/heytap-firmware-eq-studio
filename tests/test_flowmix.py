@@ -79,11 +79,14 @@ def test_device_matching_searches_dynamic_sources_without_a_fixed_default(monkey
     assert result == {"source": "new-source", "brand": "Brand", "headphone": "Brand_Model"}
 
 
-def test_independent_api_profile_loads_beside_frozen_executable(monkeypatch, tmp_path):
-    from heytap_eq import service_profile
+@pytest.mark.parametrize("packager", ["pyinstaller", "nuitka"])
+def test_independent_api_profile_loads_beside_frozen_executable(monkeypatch, tmp_path, packager):
+    from heytap_eq import runtime, service_profile
     monkeypatch.delenv("HEYTAP_FLOWMIX_AUTHORIZATION", raising=False)
     monkeypatch.setattr(service_profile, "__file__", str(tmp_path/"_internal"/"heytap_eq"/"service_profile.py"))
-    monkeypatch.setattr(service_profile.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(service_profile.sys, "frozen", packager == "pyinstaller", raising=False)
+    if packager == "nuitka":
+        monkeypatch.setattr(runtime, "__compiled__", object(), raising=False)
     monkeypatch.setattr(service_profile.sys, "executable", str(tmp_path/"Studio.exe"))
     fallback = service_profile.builtin_authorization()
     if fallback is not None:

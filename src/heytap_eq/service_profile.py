@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from heytap_eq.runtime import is_packaged
 from heytap_eq.session import atomic_json
 
 PROFILE_NAME = "_flowmix_profile.json"
@@ -23,7 +24,7 @@ def builtin_authorization(local_dir=None):
     if environment:
         return validate_authorization(environment)
     bundled = Path(__file__).with_name(PROFILE_NAME)
-    adjacent = Path(sys.executable).parent/PROFILE_NAME if getattr(sys, "frozen", False) else bundled
+    adjacent = Path(sys.executable).parent/PROFILE_NAME if is_packaged() else bundled
     for path in (bundled, adjacent, Path(local_dir)/PROFILE_NAME if local_dir else bundled):
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))

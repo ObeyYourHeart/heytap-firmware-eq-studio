@@ -6,14 +6,22 @@ import os
 import sys
 from pathlib import Path
 
+from heytap_eq.runtime import is_packaged, packager
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--smoke-test", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--smoke-test", action="store_true")
+    mode.add_argument("--benchmark", action="store_true")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
-    if args.smoke_test and args.report is None:
-        parser.error("--smoke-test requires --report")
+    if (args.smoke_test or args.benchmark) and args.report is None:
+        parser.error("--smoke-test and --benchmark require --report")
+    if args.benchmark:
+        from heytap_eq.benchmark import run_benchmark
+
+        return run_benchmark(args.report)
     from PySide6 import QtCore, QtWidgets
 
     from heytap_eq.gui import MainWindow
@@ -71,7 +79,7 @@ def main(argv=None):
                 assert reference and len(reference["presets"]) == 6
                 assert not any(k.startswith(("PyQt5", "PyQt6", "PySide2")) for k in sys.modules)
                 args.report.write_text(json.dumps({
-                    "status": "passed", "frozen": bool(getattr(sys, "frozen", False)),
+                    "status": "passed", "frozen": is_packaged(), "packager": packager(),
                     "qt": QtCore.qVersion(), "qt_binding": "PySide6",
                     "sha": os.environ.get("HEYTAP_BUILD_SHA"), "window_visible": True,
                     "screenshot": image.name, "raw_points": len(window.session.document.raw),

@@ -1,0 +1,3 @@
+# Compiler-only dependencies; the application runtime stays identical in both builds.
+Nuitka==4.2
+ordered-set==4.1.0

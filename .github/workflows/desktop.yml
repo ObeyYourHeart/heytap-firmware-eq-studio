@@ -1,4 +1,4 @@
-name: Desktop checks and Windows package
+name: Desktop checks and Windows packages
 on:
   push:
     branches: [feat/python-desktop-studio]
@@ -98,6 +98,12 @@ jobs:
           else
             python -m heytap_eq.app --smoke-test --report reports/source-startup.json
           fi
+      - name: Offline benchmark correctness
+        env:
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+        run: python -m heytap_eq.app --benchmark --report reports/source-benchmark.json
       - name: PowerShell diagnostic syntax
         if: runner.os == 'Windows'
         shell: pwsh
@@ -114,8 +120,12 @@ jobs:
           path: reports/
   windows-package:
     needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        packager: [pyinstaller, nuitka]
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,22 +151,64 @@ jobs:
           python -m pip install -r requirements-ci.txt
           python -m pip install --no-deps --no-build-isolation .
           python -m pip check
-      - name: Freeze
-        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name HeyTapFirmwareEQStudio --paths src --collect-data heytap_eq --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module PySide2 scripts/desktop_entry.py
+      - name: Locked Nuitka compiler
+        if: matrix.packager == 'nuitka'
+        run: |
+          python -m pip install -r requirements-nuitka.txt
+          python -m pip check
+      - name: Build portable desktop
+        run: python scripts/build_desktop.py ${{ matrix.packager }}
       - name: Start actual frozen executable
-        run: python scripts/check_frozen.py
+        run: python scripts/check_frozen.py --packager ${{ matrix.packager }}
       - name: Upload startup evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frozen-startup-${{ env.HEYTAP_BUILD_SHA }}
+          name: frozen-startup-${{ matrix.packager }}-${{ env.HEYTAP_BUILD_SHA }}
           path: reports/
-      - name: Record source SHA and zip portable package
+      - name: Zip portable package
         shell: pwsh
         run: |
-          Set-Content dist/HeyTapFirmwareEQStudio/SOURCE_SHA.txt "$env:HEYTAP_BUILD_SHA"
-          Compress-Archive dist/HeyTapFirmwareEQStudio dist/HeyTapFirmwareEQStudio-windows.zip
+          Compress-Archive dist/HeyTapFirmwareEQStudio dist/HeyTapFirmwareEQStudio-windows-${{ matrix.packager }}.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: HeyTapFirmwareEQStudio-windows-${{ env.HEYTAP_BUILD_SHA }}
-          path: dist/HeyTapFirmwareEQStudio-windows.zip
+          name: HeyTapFirmwareEQStudio-windows-${{ matrix.packager }}-${{ env.HEYTAP_BUILD_SHA }}
+          path: dist/HeyTapFirmwareEQStudio-windows-${{ matrix.packager }}.zip
+          compression-level: 0
+  compare-packages:
+    needs: windows-package
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEYTAP_BUILD_SHA }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: HeyTapFirmwareEQStudio-windows-pyinstaller-${{ env.HEYTAP_BUILD_SHA }}
+          path: downloads/pyinstaller
+      - uses: actions/download-artifact@v4
+        with:
+          name: HeyTapFirmwareEQStudio-windows-nuitka-${{ env.HEYTAP_BUILD_SHA }}
+          path: downloads/nuitka
+      - name: Extract both portable packages
+        shell: pwsh
+        run: |
+          foreach ($packager in @("pyinstaller", "nuitka")) {
+            Expand-Archive "downloads/$packager/HeyTapFirmwareEQStudio-windows-$packager.zip" "packages/$packager"
+          }
+      - name: Compare actual executables on the same runner
+        run: python scripts/compare_packages.py
+      - name: Upload performance and compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-comparison-${{ env.HEYTAP_BUILD_SHA }}
+          path: reports/comparison/
