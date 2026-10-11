@@ -136,6 +136,15 @@ class LayoutMixin:
             self.appearance_menu.addAction(action)
             self.mode_actions[key] = action
         self.appearance_menu.addSeparator()
+        self.contrast_group = QtGui.QActionGroup(self)
+        self.contrast_actions = {}
+        for key, title in themes.CONTRASTS.items():
+            action = QtGui.QAction(f"对比度 · {title}", self.contrast_group)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _=False, key=key: self.set_appearance(contrast=key))
+            self.appearance_menu.addAction(action)
+            self.contrast_actions[key] = action
+        self.appearance_menu.addSeparator()
         self.accent_group = QtGui.QActionGroup(self)
         self.accent_actions = {}
         for key, (title, colors) in themes.ACCENTS.items():
@@ -175,7 +184,7 @@ class LayoutMixin:
         toolbar.addWidget(self.firmware_label)
         appearance = QtWidgets.QToolButton()
         appearance.setText("外观")
-        appearance.setToolTip("主题：跟随系统／浅色／深色，以及强调色")
+        appearance.setToolTip("主题：跟随系统／浅色／深色，对比度（含系统高对比度），以及强调色")
         appearance.setMenu(self.appearance_menu)
         appearance.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         toolbar.addWidget(appearance)
@@ -486,12 +495,24 @@ class LayoutMixin:
         self.busy.setVisible(bool(self.workers or self.network_workers))
         self.cancel_button.setVisible(bool(self.workers))
 
+    def system_appearance(self):
+        """(dark, high contrast) as the platform reports them."""
+        high, dark = themes.windows_high_contrast()
+        hints = QtGui.QGuiApplication.styleHints()
+        if not high and hasattr(hints, "accessibility"):  # Qt 6.10+ reports contrast directly.
+            try:
+                high = hints.accessibility().contrastPreference() == QtCore.Qt.ContrastPreference.HighContrast
+            except AttributeError:
+                pass
+        if dark is None:
+            dark = hints.colorScheme() != QtCore.Qt.ColorScheme.Light
+        return dark, high
+
     def system_is_dark(self):
-        scheme = QtGui.QGuiApplication.styleHints().colorScheme()
-        return scheme != QtCore.Qt.ColorScheme.Light
+        return self.system_appearance()[0]
 
     def apply_theme(self):
-        self.theme = themes.resolve(self.appearance, self.system_is_dark())
+        self.theme = themes.resolve(self.appearance, *self.system_appearance())
         apply_palette(self.theme)
         try:
             icons = write_icons(self.theme, self.auto_path.parent/"theme-icons")
@@ -500,12 +521,14 @@ class LayoutMixin:
         self.setStyleSheet(themes.stylesheet(self.theme, icons))
         self.mode_actions[self.appearance["mode"]].setChecked(True)
         self.accent_actions[self.appearance["accent"]].setChecked(True)
+        self.contrast_actions[self.appearance["contrast"]].setChecked(True)
         self.main_plot.set_theme(themes.web(self.theme))
         self.refresh()
 
-    def set_appearance(self, mode=None, accent=None):
+    def set_appearance(self, mode=None, accent=None, contrast=None):
         self.appearance = themes.validate({"mode": mode or self.appearance["mode"],
-                                           "accent": accent or self.appearance["accent"]})
+                                           "accent": accent or self.appearance["accent"],
+                                           "contrast": contrast or self.appearance["contrast"]})
         try:
             atomic_json(self.appearance_path, self.appearance)
         except OSError as exc:
@@ -513,5 +536,15 @@ class LayoutMixin:
         self.apply_theme()
 
     def system_scheme_changed(self, *_):
-        if self.appearance["mode"] == "system":
+        """Follow the system only where asked to, and restyle only when the result changes."""
+        if "system" not in (self.appearance["mode"], self.appearance["contrast"]):
+            return
+        resolved = themes.resolve(self.appearance, *self.system_appearance())
+        if (resolved["mode"], resolved["contrast"]) != (self.theme["mode"], self.theme["contrast"]):
             self.apply_theme()
+
+    def changeEvent(self, event):
+        # Windows contrast themes arrive as a platform theme change, not as a colour-scheme change.
+        if event.type() == QtCore.QEvent.Type.ThemeChange:
+            self.system_scheme_changed()
+        super().changeEvent(event)

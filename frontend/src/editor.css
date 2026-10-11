@@ -1,7 +1,7 @@
 /* Tokens are overwritten by Python (theme.py) so the graph matches the Qt shell. */
 :root {
   --bg: #0f1520; --surface: #151d29; --surface-2: #1c2635; --border: #2a3647; --text: #dbe4ef;
-  --muted: #8fa2b8; --accent: #3ccfb8; --accent-text: #052520; --accent-soft: #3ccfb826;
+  --muted: #8fa2b8; --accent: #5b9dff; --accent-text: #0b1220; --accent-soft: #5b9dff26;
   --warn: #e8b04a; --warn-soft: #e8b04a1f; --danger: #ff8f8f; --plot-top: #131e2d; --plot-bottom: #0c131d;
   --plot-edge: #2a3647; --grid: #253246; --tick: #a5b5c8; --band: #b29ad4; --raw-node: #8fa2b8;
   --crosshair: #a8b9cf; --shadow: #0009;
@@ -71,6 +71,18 @@ select.mini { font-size: 12px; padding: 1px 4px; border-radius: 6px; background:
 .help div { display: flex; justify-content: space-between; gap: 12px; }
 .help kbd { font: inherit; color: var(--text); }
 .help span { color: var(--muted); }
+
+/* High contrast: edges and focus carry meaning, so make them thicker instead of only recolouring. */
+[data-contrast="high"] button, [data-contrast="high"] select.mini, [data-contrast="high"] .chip,
+[data-contrast="high"] .notice, [data-contrast="high"] .inspector, [data-contrast="high"] .help,
+[data-contrast="high"] .plot { border-width: 2px; }
+[data-contrast="high"] button:focus-visible, [data-contrast="high"] select:focus-visible,
+[data-contrast="high"] input:focus-visible { outline-width: 3px; outline-offset: 2px; }
+[data-contrast="high"] .chip.on { border-color: var(--text); }
+[data-contrast="high"] .chip:not(.on) .swatch { opacity: .6; }
+[data-contrast="high"] .notice.warn { border-color: var(--warn); }
+[data-contrast="high"] .band rect { opacity: .2; }
+[data-contrast="high"] .crosshair line { opacity: 1; }
 
 .footer { display: flex; justify-content: space-between; gap: 12px; min-height: 16px; font-size: 12px; color: var(--muted);
   font-variant-numeric: tabular-nums; padding-left: 48px; }

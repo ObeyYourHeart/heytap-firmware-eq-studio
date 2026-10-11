@@ -47,7 +47,8 @@ function Editor() {
       filters: latest.current.data.filters.length, legend: latest.current.data.legend?.length || 0,
       view: latest.current.view, svgPaths: document.querySelectorAll('.plot svg path').length,
       width: latest.current.size?.width || 0, height: latest.current.size?.height || 0,
-      selected: latest.current.selected, theme: document.documentElement.dataset.theme || null })
+      selected: latest.current.selected, theme: document.documentElement.dataset.theme || null,
+      contrast: document.documentElement.dataset.contrast || null })
     const resize = new ResizeObserver(entries => {
       const r = entries[0].contentRect
       setSize({ width: Math.max(10, r.width), height: Math.max(10, r.height) })
@@ -124,6 +125,7 @@ function Editor() {
   })) : [], [data.curves, view, width, size])
   const selectedFilter = selected === null ? null : data.filters[selected]
   const tokens = data.theme?.tokens || {}
+  const lineScale = data.theme?.lineScale || 1
   const graphTheme = useMemo(() => ({
     background: { grid: { lineColor: tokens['grid'] || '#2b3a50' }, label: { color: 'transparent' },
       gradient: { start: tokens['plot-top'] || '#131e2d', stop: tokens['plot-bottom'] || '#0c131d' } },
@@ -187,7 +189,8 @@ function Editor() {
                 <text x={end ? right - 6 : left + 6} y={15} textAnchor={end ? 'end' : 'start'}>{band.label}</text></g>
             })}
             {curves.map((c, i) => <g key={c.name} clipPath={`url(#curve-clip-${i})`}>
-              <FrequencyResponseCurve color={c.color} lineWidth={c.width || 2} dotted={c.dashed} magnitudes={c.magnitudes} /></g>)}
+              <FrequencyResponseCurve color={c.color} lineWidth={(c.width || 2) * lineScale} dotted={c.dashed}
+                magnitudes={c.magnitudes} /></g>)}
             {data.rawNodes && data.raw.map((point, index) => <g key={`raw-${index}`} data-node="raw">
               <FilterPoint filter={{ type: 'PEAK', freq: point[0], gain: point[1] + interpolate(data.rawBase, point[0]), q: 1 }}
                 index={index} dragX={false} wheelQ={false} radius={3.5} color={tokens['raw-node'] || '#8fa2b8'} label=""
@@ -199,7 +202,7 @@ function Editor() {
               onClick={() => setSelected(index)}>
               <FilterPoint filter={{ type: 'PEAK', freq: f.frequency,
                 gain: (noGain.has(f.kind) ? 0 : f.gain) + interpolate(data.nodeBase, f.frequency), q: f.q }}
-                index={index} color={tokens['accent'] || '#3ccfb8'} label={String(f.id)} active={selected === index}
+                index={index} color={tokens['accent'] || '#5b9dff'} label={String(f.id)} active={selected === index}
                 dragY={!noGain.has(f.kind)} wheelQ={false}
                 onDrag={active => { if (active) send({ op: 'begin' }) }}
                 onChange={e => changeFilter(f, index, e)} />

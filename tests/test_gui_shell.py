@@ -1,6 +1,6 @@
 import threading
 
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 
 from heytap_eq import theme
 from heytap_eq.eq_formats import parse_text
@@ -61,11 +61,41 @@ def test_theme_follows_preferences_and_restyles_both_halves(tmp_path, qt_app):
     assert {c["color"] for c in window.main_plot.curves} <= set(light["curves"].values())
     window.close()
     restored = MainWindow(recover=False, auto_path=tmp_path/"theme.json")
-    assert restored.appearance == {"mode": "light", "accent": "violet"}
+    assert restored.appearance == {"mode": "light", "accent": "violet", "contrast": "system"}
     restored.set_appearance(mode="system")
     expected = "dark" if restored.system_is_dark() else "light"
     assert restored.main_plot.theme["mode"] == expected
     restored.close()
+
+
+def test_high_contrast_follows_the_preference_and_the_system(monkeypatch, tmp_path, qt_app):
+    window = MainWindow(recover=False, auto_path=tmp_path/"contrast.json")
+    window.set_appearance(mode="dark", contrast="high")
+    assert window.theme["contrast"] == "high" and window.contrast_actions["high"].isChecked()
+    assert window.main_plot.theme["contrast"] == "high" and window.main_plot.theme["lineScale"] == 1.5
+    assert "border-width: 2px" in window.styleSheet() and window.theme["tokens"]["bg"] == "#000000"
+    # Follow the system: Windows contrast themes arrive as a platform ThemeChange event.
+    system = {"dark": True, "high": False}
+    monkeypatch.setattr(window, "system_appearance", lambda: (system["dark"], system["high"]))
+    window.set_appearance(mode="system", contrast="system")
+    assert window.theme["contrast"] == "standard" and window.theme["mode"] == "dark"
+    applied = []
+    apply_theme = window.apply_theme
+    monkeypatch.setattr(window, "apply_theme", lambda: (applied.append(1), apply_theme()))
+    theme_change = QtCore.QEvent(QtCore.QEvent.Type.ThemeChange)
+    QtWidgets.QApplication.sendEvent(window, theme_change)
+    assert applied == []  # nothing changed, so no restyle
+    system.update(dark=False, high=True)  # e.g. the "Desert" contrast theme
+    QtWidgets.QApplication.sendEvent(window, theme_change)
+    assert applied == [1] and (window.theme["mode"], window.theme["contrast"]) == ("light", "high")
+    assert window.main_plot.theme["tokens"]["bg"] == "#ffffff"
+    # An explicit choice is not overridden by the system.
+    window.set_appearance(mode="dark", contrast="standard")
+    applied.clear()
+    system.update(dark=False, high=False)
+    QtWidgets.QApplication.sendEvent(window, theme_change)
+    assert applied == [] and (window.theme["mode"], window.theme["contrast"]) == ("dark", "standard")
+    window.close()
 
 
 def test_legend_view_events_and_commands_are_validated(tmp_path, qt_app):

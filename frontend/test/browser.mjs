@@ -11,12 +11,12 @@ const errors = []
 page.on('pageerror', error => errors.push(error.message))
 await page.addInitScript(() => {
   window.events = []
-  window.fixture = { curves: [{ name: 'Fixture response', color: '#59debc', points: [[20, 0], [1000, 4], [20000, -2]] }],
+  window.fixture = { curves: [{ name: 'Fixture response', color: '#2f6fb0', points: [[20, 0], [1000, 4], [20000, -2]] }],
     filters: [{ id: 1, frequency: 1000, gain: 2, q: 0.7, kind: 'PEAK', enabled: true }],
     raw: [], nodeBase: [], rawBase: [], addBase: [], label: 'Synthetic interaction fixture', low: -24, high: 24,
-    legend: [{ key: 'original', label: 'Fixture response', color: '#59debc', checked: true, group: 'acoustic' },
+    legend: [{ key: 'original', label: 'Fixture response', color: '#2f6fb0', checked: true, group: 'acoustic' },
       { key: 'target', label: 'Target', color: '#f2c14e', dashed: true, checked: false, group: 'acoustic' }],
-    theme: { mode: 'light', tokens: { bg: '#f6f8fb', accent: '#0f8f7e' } } }
+    theme: { mode: 'light', tokens: { bg: '#f6f8fb', accent: '#2563d4' } } }
   window.qt = { webChannelTransport: {} }
   window.QWebChannel = class {
     constructor(transport, callback) {
@@ -84,8 +84,26 @@ try {
   await page.getByRole('button', { name: '删除', exact: true }).click()
   await page.waitForFunction(() => window.fixture.filters.length === 1)
   // Schema 2: legend chips toggle curves through Python, theme tokens restyle the page.
-  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()), '#0f8f7e')
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()), '#2563d4')
   assert.equal(await page.evaluate(() => window.studioInspect().theme), 'light')
+  // High contrast: the page is told so, draws curves 1.5x thicker and thickens control edges.
+  const strokeWidth = () => page.evaluate(() => {
+    const curve = [...document.querySelectorAll('.plot svg path')].find(p => getComputedStyle(p).stroke === 'rgb(47, 111, 176)')
+    return curve ? parseFloat(getComputedStyle(curve).strokeWidth) : null
+  })
+  const standardWidth = await strokeWidth()
+  assert.ok(standardWidth > 0)
+  const setContrast = (contrast, lineScale) => page.evaluate(([contrast, lineScale]) => {
+    window.fixture.theme = { ...window.fixture.theme, contrast, lineScale }
+    window.studioUpdate(JSON.stringify(window.fixture))  // a fresh payload, as the bridge sends
+  }, [contrast, lineScale])
+  await setContrast('high', 1.5)
+  await page.waitForFunction(() => window.studioInspect().contrast === 'high')
+  assert.equal(await strokeWidth(), standardWidth * 1.5)
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('header button')).borderTopWidth), '2px')
+  await setContrast('standard', 1)
+  await page.waitForFunction(() => window.studioInspect().contrast === 'standard')
+  assert.equal(await strokeWidth(), standardWidth)
   await page.locator('.chip[data-key="target"]').click()
   assert.deepEqual(await page.evaluate(() => window.events.at(-1)), { op: 'view', key: 'target', value: true })
   assert.equal(await page.locator('.chip[data-key="target"]').getAttribute('aria-pressed'), 'true')
@@ -105,7 +123,7 @@ try {
   assert.deepEqual(errors, [])
   await mkdir(path.join(root, 'reports'), { recursive: true })
   await page.screenshot({ path: path.join(root, 'reports/dsssp-editor.png') })
-  await writeFile(path.join(root, 'reports/frontend-interactions.json'), JSON.stringify({ status: 'passed', checks: ['log resampling', 'cursor zoom', 'double click add', 'live drag', 'wheel Q', 'zoom retained', 'zero gain edit', 'delete', 'theme tokens', 'legend toggle', 'auto-fit', 'delete key', 'empty-state command'], errors }, null, 2))
+  await writeFile(path.join(root, 'reports/frontend-interactions.json'), JSON.stringify({ status: 'passed', checks: ['log resampling', 'cursor zoom', 'double click add', 'live drag', 'wheel Q', 'zoom retained', 'zero gain edit', 'delete', 'theme tokens', 'high contrast', 'legend toggle', 'auto-fit', 'delete key', 'empty-state command'], errors }, null, 2))
 } finally {
   await browser.close()
 }

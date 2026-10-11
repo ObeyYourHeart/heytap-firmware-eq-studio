@@ -23,4 +23,5 @@ export function applyTheme(theme) {
   const root = document.documentElement
   for (const [key, value] of Object.entries(theme.tokens || {})) root.style.setProperty(`--${key}`, value)
   root.dataset.theme = theme.mode || 'dark'
+  root.dataset.contrast = theme.contrast || 'standard'
 }
