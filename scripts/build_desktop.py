@@ -25,7 +25,7 @@ def main():
     else:
         command = [sys.executable, "-m", "nuitka", "--mode=standalone", "--enable-plugin=pyside6",
                    "--msvc=latest", "--jobs=4", "--lto=no", "--assume-yes-for-downloads",
-                   "--windows-console-mode=disable", "--output-dir=dist",
+                   "--windows-console-mode=attach", "--output-dir=dist",
                    "--output-filename=HeyTapFirmwareEQStudio.exe",
                    "--include-package=heytap_eq", "--include-package-data=heytap_eq",
                    "--report=reports/nuitka-compilation.xml", "scripts/desktop_entry.py"]

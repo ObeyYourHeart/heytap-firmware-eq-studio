@@ -18,8 +18,15 @@ report = Path("reports/frozen-startup.json").resolve()
 report.parent.mkdir(exist_ok=True)
 report.unlink(missing_ok=True)
 started = time.perf_counter()
-subprocess.run([str(exe), "--smoke-test", "--report", str(report)], check=True, timeout=60)
+process = subprocess.run([str(exe), "--smoke-test", "--report", str(report)],
+                         timeout=60, capture_output=True, text=True, errors="replace")
 elapsed = time.perf_counter()-started
+if process.returncode:
+    print(process.stdout)
+    print(process.stderr)
+    if report.is_file():
+        print(report.read_text(encoding="utf-8"))
+    process.check_returncode()
 data = json.loads(report.read_text())
 assert data["status"] == "passed" and data["frozen"] and data["window_visible"]
 assert data["packager"] == args.packager

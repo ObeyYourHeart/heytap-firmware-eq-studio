@@ -156,8 +156,24 @@ jobs:
         run: |
           python -m pip install -r requirements-nuitka.txt
           python -m pip check
+      - name: Restore Nuitka compiler cache
+        if: matrix.packager == 'nuitka'
+        id: nuitka-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/AppData/Local/Nuitka
+          key: nuitka-windows-python311-${{ hashFiles('requirements-ci.txt', 'requirements-nuitka.txt') }}-${{ env.HEYTAP_BUILD_SHA }}
+          restore-keys: |
+            nuitka-windows-python311-${{ hashFiles('requirements-ci.txt', 'requirements-nuitka.txt') }}-
       - name: Build portable desktop
+        id: build
         run: python scripts/build_desktop.py ${{ matrix.packager }}
+      - name: Save Nuitka compiler cache
+        if: always() && matrix.packager == 'nuitka' && steps.build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/AppData/Local/Nuitka
+          key: nuitka-windows-python311-${{ hashFiles('requirements-ci.txt', 'requirements-nuitka.txt') }}-${{ env.HEYTAP_BUILD_SHA }}
       - name: Start actual frozen executable
         run: python scripts/check_frozen.py --packager ${{ matrix.packager }}
       - name: Upload startup evidence
