@@ -66,13 +66,13 @@
 
 ## 验证
 
-- 本地 Windows 11，Python 3.11.9 + `requirements-ci.txt` 锁定依赖：`pytest` 73 项通过（原 53 项 + 主题 12 项 + 外壳 8 项），`ruff check .` 通过。
-- 前端：`npm test` 4 项（含新增纵轴适配），`npm run test:browser` 保留全部原有交互，并新增主题变量、图例开关、适配、Delete 键、空状态命令。
+- 本地 Windows 11，Python 3.11.9 + `requirements-ci.txt` 锁定依赖：`pytest` 93 项通过（原 53 项 + 主题、外壳、曲线组合、拟合回归），`ruff check .` 通过。
+- 前端：`npm test` 4 项（含新增纵轴适配），`npm run test:browser` 保留全部原有交互，并新增主题变量、高对比度（曲线 1.5 倍、2 px 边框）、图例开关、适配、Delete 键、空状态命令。
 - `python -m heytap_eq.app --smoke-test` 通过。
-- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包、冻结 EXE 启动与两种 EXE 对比。`3d35610`（重构后的外壳）与 `5a9df28`（侧栏折叠 + 内联生成修正）五个 job 全部通过。
+- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包、冻结 EXE 启动与两种 EXE 对比。`3d35610`（重构后的外壳）、`5a9df28`（侧栏折叠 + 内联生成修正）与 `3ff6536`（拟合提速、曲线组合、配色与高对比度、冻结检查）五个 job 全部通过。
 - Windows runner 屏幕较小，窗口启动即低于 1200 px、侧栏为折叠状态；本地用 `QT_SCALE_FACTOR=1.1` 复现同一条件，外壳测试全部通过。
 
-固件解析、DSP、拟合、写入与声学差分模型没有改动；工程 v4、撤销／重做、剪贴板格式保持兼容。
+固件解析、DSP、固件拟合、写入与声学差分模型没有改动；测量 PEQ 拟合只改了目标函数的计算方式，结果不变（见“PEQ 拟合提速”）。工程 v4、撤销／重做、剪贴板格式保持兼容。
 
 ## 配色与高对比度
 
@@ -112,6 +112,27 @@
 
 回归测试：`test_vectorised_peak_chain_matches_the_firmware_biquads`、`test_peq_fit_is_unchanged_from_the_per_filter_objective`（用原目标函数重新拟合并比较）、`test_eight_peq_fit_stays_interactive`；`--benchmark` 新增 8 个 PEQ 的工作量，两种 EXE 的结果在 CI 中互相比对。固件预设拟合（`firmware_edit.fit_record`，每条约 3 s）属于写入链路，没有改动。
 
+## 打包（Nuitka／PyInstaller）
+
+结论：Nuitka 打包实现正确。依据 `3ff6536` 的 Actions 产物：
+
+- 构建：`--mode=standalone --enable-plugin=pyside6 --msvc=latest`，32 个 `heytap_eq` 模块全部编译为 C（含新增的 `composition`），`--include-package-data` 带上了 `web/` 与 `data/`；编译报告 0 条警告。报告中可以看到 `QtWebEngineProcess.exe`、`icudtl.dat`、WebEngine 资源、`qsvg.dll`／`qsvgicon.dll` 及其依赖 `qt6svg.dll`、`qtbase_zh_CN.qm`。未编译的 Python 模块主要是 CPython 启动所需的标准库，属于 Nuitka 的正常行为。
+- 运行：冻结 EXE 实际启动，窗口可见，WebEngine 图形绘制 3 条曲线；新增检查要求主题的 SVG 箭头能加载、zh_CN 翻译已安装、未设置环境变量时 BLAS 为单线程，Nuitka 与 PyInstaller 两种 EXE 都通过（检查脚本会先从子进程环境中移除该变量）。
+- 一致性：同一 runner 上交替运行三次，两种 EXE 的全部数值输出（EQ 文本往返、频响、2／8 个 PEQ 拟合、固件 RAW 拟合）在 1e-5 内相同。
+- 性能：Nuitka 比 PyInstaller 快 1.01–1.15 倍（启动 1.62 对 1.80 s；8 个 PEQ 拟合 0.39 对 0.40 s）。计算主要在 numpy／scipy／Qt 的原生代码里，编译 Python 收益有限，这是预期结果；构建 305 s（有缓存），PyInstaller 约 45 s。
+- 体积：Nuitka 455 MiB／534 个文件，PyInstaller 约 520 MiB／2933 个文件，主要来自 QtWebEngine。
+
 ## 尚未完成
 
-- 截图来自源码运行；冻结 EXE 由 Actions 的启动检查验证。
+按影响排列：
+
+1. 固件预设拟合慢，且超限只在导出时才知道。用内置的真实 Enco X4 参考预设测量：每个预设 36 条记录里有 6–7 组不同的基底滤波器，一次“拟合到固件预设”约 16 s（每组 1.4–3.1 s，`firmware_edit.fit_record`）。修正幅度较大时，7 组中有 5 组 RMS 为 0.45–0.71 dB，超过导出默认限值 0.45 dB；计划阶段只显示最大误差，导出时才报错。建议：计划列表与导出对话框按限值标出通过／超限；`fit_record` 可以用与 PEQ 相同的向量化目标函数提速，但属于固件写入链路，需要逐位对照的回归测试并单独提交。
+2. 原有 `tests/test_gui.py` 仍用 `QTest.qWait` 等待后台任务；PySide6 6.8 在 `qWait` 期间持有 GIL，后台 Python 线程会慢约 200 倍（0.3 s 的拟合超过 60 s）。改为事件循环等待即可，测试更快、更不容易超时。
+3. AutoEQ／Equalizer APO／REW 导入（`feat/import-autoeq-apo-rew`）还没有并入这条分支。
+4. 撤销快照每次都复制并逐点校验全部测量和目标（最多 100 步），曲线多时每次编辑的开销随总点数增长；可以改为共享不可变曲线，只记录选择变化。
+5. 图上的 PEQ 节点不能用键盘选择或微调，只能用“参数表”面板；高对比度用户更需要这条路径（例如 Tab 切换节点、方向键调频率／增益）。
+6. 两种 EXE 都没有程序图标、版本信息资源和代码签名，Windows 会显示 SmartScreen 警告；Nuitka 可加 `--windows-icon-from-ico`、`--product-name`、`--file-version`，PyInstaller 用 `--icon`、`--version-file`。另外 Nuitka 版使用 `--windows-console-mode=attach`，从终端启动时会把输出写到该终端，PyInstaller 版（`--windowed`）不会，两者行为略有不同。
+7. Windows 对比度主题的实时切换只能用模拟的 `ThemeChange` 测试；需要在实际机器上开关一次系统设置确认。
+8. Flowmix 使用内置授权并以 App 的 User-Agent 访问，按 CLAUDE.md 需要与维护者讨论，本轮没有改动。
+9. `docs/handoff.md` 等历史文档有部分内容已过时（CLAUDE.md 也已说明）。
+10. 截图来自源码运行；冻结 EXE 由 Actions 的启动检查与截图验证。
