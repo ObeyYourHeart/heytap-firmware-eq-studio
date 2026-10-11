@@ -1599,9 +1599,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_plot.set_editor(
             label=f"调音 · {fs/1000:g} kHz"+(f" · {self.region_combo.currentText()}" if bank else ""),
             filters=[asdict(f) for f in doc.filters], raw=doc.raw, rawNodes=bool(raw_nodes),
-            nodeBase=np.column_stack((frequency, base+raw_values)).tolist(),
-            rawBase=np.column_stack((frequency, base)).tolist(),
-            addBase=np.column_stack((frequency, base+eq_values)).tolist(), bands=bands,
+            nodeBase=self.main_plot.offsets(frequency, base+raw_values),
+            rawBase=self.main_plot.offsets(frequency, base),
+            addBase=self.main_plot.offsets(frequency, base+eq_values), bands=bands,
             splOffset=spl_offset if has_measurement and not self.relative_check.isChecked() else None,
             legend=legend, notice=self._notice(difference, difference_error, has_measurement),
             dacMode={"value": self.dac_mode(), "options": [{"value": k, "label": t} for k, t in DAC_MODES]}

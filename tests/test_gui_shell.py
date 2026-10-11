@@ -121,3 +121,29 @@ def test_busy_indicator_and_cancel_only_show_while_working(tmp_path, qt_app):
     assert wait(qt_app, lambda: not window.workers)
     assert not window.busy.isVisible() and not window.cancel_button.isVisible()
     window.close()
+
+
+def test_published_payload_stays_compact(monkeypatch, tmp_path, qt_app):
+    import json
+    from pathlib import Path
+
+    from heytap_eq.eq_formats import load_eq
+    from tests.firmware_fixture import synthetic_firmware
+
+    window = MainWindow(recover=False, auto_path=tmp_path/"payload.json")
+    window.connect_flowmix = lambda: None
+    assert window.main_plot.payload()["nodeBase"] == []
+    window.set_firmware(synthetic_firmware(monkeypatch, tmp_path))
+    window.set_document(load_eq(Path("research/enco_x4_eq_toolkit/examples/Technics-AZ80-Optimized.txt")))
+    frequency = [20*1.0116**i for i in range(600)]
+    window.set_measurements([Measurement("Dense", frequency, [80+i % 7 for i in range(600)]).validate()])
+    window.set_targets([Measurement("Target", [20, 1000, 20000], [2, 0, -1]).validate()])
+    window.curve_checks["dac1"].setChecked(True)
+    window.curve_checks["dac2"].setChecked(True)
+    payload = window.main_plot.payload()
+    text = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    # Before rounding and the 2048-point grid this configuration published about 1.2 MB per refresh.
+    assert len(text) < 350_000, len(text)
+    values = [v for curve in payload["curves"] for point in curve["points"] for v in point]
+    assert all(round(v, 3) == v for v in values)
+    window.close()

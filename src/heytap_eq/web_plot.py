@@ -93,13 +93,24 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
         # The SVG grid already draws the zero reference.
         pass
 
-    def plot(self, frequency, values, color="#efb55a", name="", dashed=False, width=None):
+    @staticmethod
+    def series(frequency, values):
+        """[[Hz, dB], ...] rounded for the wire: 0.001 Hz / 0.001 dB is far below what is drawn."""
         points = np.column_stack((frequency, values))
-        if len(points) < 2:
-            return
         if not np.all(np.isfinite(points)):
             raise ValueError("Non-finite plot points")
-        curve = {"name": name, "points": points.tolist(), "color": color, "dashed": bool(dashed)}
+        return np.round(points, 3).tolist()
+
+    @classmethod
+    def offsets(cls, frequency, values):
+        """Node offsets; an all-zero offset is sent as [] (the page treats it as 0 dB)."""
+        return cls.series(frequency, values) if np.any(values) else []
+
+    def plot(self, frequency, values, color="#efb55a", name="", dashed=False, width=None):
+        points = self.series(frequency, values)
+        if len(points) < 2:
+            return
+        curve = {"name": name, "points": points, "color": color, "dashed": bool(dashed)}
         if width:
             curve["width"] = float(width)
         self.curves.append(curve)
@@ -111,14 +122,16 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
         self.editor = data
         self.commit()
 
+    def payload(self):
+        return {"schema": SCHEMA, "curves": self.curves, "low": self.low, "high": self.high,
+                "reset": self.reset_requested, "fit": self.fit_requested,
+                "axisLabel": self.axis_label, "theme": self.theme, "legend": [],
+                "filters": [], "raw": [], **self.editor}
+
     def commit(self):
         if not self.is_ready:
             return
-        payload = {"schema": SCHEMA, "curves": self.curves, "low": self.low, "high": self.high,
-                   "reset": self.reset_requested, "fit": self.fit_requested,
-                   "axisLabel": self.axis_label, "theme": self.theme, "legend": [],
-                   "filters": [], "raw": [], **self.editor}
-        self.bridge.publish.emit(json.dumps(payload, ensure_ascii=False, allow_nan=False))
+        self.bridge.publish.emit(json.dumps(self.payload(), ensure_ascii=False, allow_nan=False))
         self.reset_requested = self.fit_requested = False
 
     def inspect(self, callback):
