@@ -14,7 +14,6 @@ from pathlib import Path
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from heytap_eq import dialogs
 from heytap_eq import theme as themes
 from heytap_eq.clipboard import MIME, PRESET_SCHEMA, copy_plan, decode_text, tuning_payload
 from heytap_eq.configuration import config, configurations, record_at, tables_for
@@ -22,8 +21,8 @@ from heytap_eq.dsp import correction, firmware_curve
 from heytap_eq.eq_formats import Filter, dump_eq, load_eq
 from heytap_eq.firmware_dsp import FILTER_TYPES
 from heytap_eq.firmware_dsp import response as firmware_response
-from heytap_eq.fitting import fit_response
 from heytap_eq.flowmix import FlowmixClient
+from heytap_eq.gui_correction import CorrectionMixin
 from heytap_eq.gui_firmware import FirmwareMixin
 from heytap_eq.gui_layout import DAC_MODES, LayoutMixin
 from heytap_eq.gui_sources import SourcesMixin
@@ -53,7 +52,7 @@ class Worker(QtCore.QThread):
             self.result = (None, exc)
 
 
-class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow):
+class MainWindow(LayoutMixin, SourcesMixin, CorrectionMixin, FirmwareMixin, QtWidgets.QMainWindow):
     def __init__(self, recover=True, auto_path=None):
         super().__init__()
         self.setWindowTitle("HeyTap Firmware EQ Studio")
@@ -235,42 +234,6 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
                 raise ValueError("此包尚未配置测量接口认证；离线导入与拟合可直接使用。")
             return auth
         self._task(prepare, connected, network=True)
-
-    # ------------------------------------------------------------------ correction
-    def start_fit(self):
-        a, b = self.measurement_combo.currentIndex(), self.target_combo.currentIndex()
-        if a < 0 or b < 0:
-            self.statusBar().showMessage("请先在 ①、② 选择原始频响与目标频响。")
-            return
-        choice = dialogs.correction_options(self)
-        if choice:
-            mode, options = choice
-            self.fit_measurements(self.measurements[a], self.targets[b], mode, options)
-
-    def fit_measurements(self, original, target, mode, options):
-        if self.workers:
-            return
-        generation = self.edit_generation
-        original, target = copy.deepcopy(original), copy.deepcopy(target)
-        try:
-            difference = self.difference(np.asarray(original.frequencies))
-            if difference:
-                original.spl_values = (np.asarray(original.spl_values)+difference["delta"]).tolist()
-                original.title += " · 当前固件估计"
-        except (ValueError, KeyError, IndexError) as exc:
-            self.statusBar().showMessage(f"无法按当前固件估计生成修正：{exc}")
-            return
-        self.fit_cancel = threading.Event()
-
-        def received(result):
-            if generation != self.edit_generation:
-                self.statusBar().showMessage("拟合期间输入发生变化，结果未覆盖当前编辑。")
-                return
-            doc, report = result
-            self.set_document(doc)
-            self.fit_report = report
-            self.refresh()
-        self._task(lambda: fit_response(original, target, mode, options, self.fit_cancel), received)
 
     # ------------------------------------------------------------------ files
 
@@ -485,7 +448,6 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
         self.firmware_open_button.setVisible(not writable)
         self.firmware_body.setVisible(writable)
         self.reference_block.setVisible(writable)
-        self.fit_target_button.setEnabled(has_measurement and has_target)
         if not self._online_manual:
             # Online pickers stay open while nothing is measured, then fold away to keep the rail short.
             self._restoring_online = True
@@ -540,6 +502,7 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
             self.cards["firmware"].set_summary("未打开已识别的固件" if not self.firmware else "布局未识别，只读",
                                                warn=bool(self.firmware))
         self.cards["export"].set_summary("有待导出的修改" if pending else "", pending)
+        self._update_steps()
         if self.fit_report:
             text = " · ".join(f"{int(rate)/1000:g} kHz RMS {v['rms_db']:.2f} / 最大 {v['max_db']:.2f} dB"
                               for rate, v in self.fit_report["rates"].items())
@@ -584,6 +547,7 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
     def refresh(self, *_):
         if not hasattr(self, "gains_label"):
             return
+        self._sync_correction_preview()
         doc = self._preview_document or self.session.document
         bank = self.firmware.profiles if self.firmware else None
         key = self.current_key()
@@ -649,6 +613,10 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
             if self.curve_checks["estimated"].isChecked():
                 self.main_plot.plot(frequency[visible], (base+eq_values)[visible], color=colors["estimated"],
                                     name="编辑后估计", width=2.5)
+            if self.correction_preview and self.curve_checks["preview"].isChecked():
+                preview_values = correction(self.correction_preview[0], frequency, fs)
+                self.main_plot.plot(frequency[visible], (base+preview_values)[visible], color=colors["preview"],
+                                    dashed=True, name="生成预览 · 应用后估计")
             if plan:
                 try:
                     pending = self.difference(frequency, [plan], plan["destination"])
@@ -707,6 +675,9 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
             add("estimated", "编辑后估计", "acoustic", checks["estimated"], hint="估计值，不是实测")
             if planned_curve:
                 add("planned", "待导出估计", "acoustic", checks["planned"], True, "按待写入的固件参数计算的估计")
+            if self.correction_preview:
+                add("preview", "生成预览", "acoustic", checks["preview"], True,
+                    "③ 中生成设置的预览，应用前不会改变修正 EQ")
         if has_target:
             add("target", "目标", "acoustic", checks["target"], True)
         if doc.raw or doc.filters:
@@ -745,4 +716,7 @@ class MainWindow(LayoutMixin, SourcesMixin, FirmwareMixin, QtWidgets.QMainWindow
             self.statusBar().showMessage("正在读取文件，完成后即可关闭窗口。")
             event.ignore()
         else:
+            self.discard_correction_preview()
+            if self.preview_worker is not None:
+                self.preview_worker.wait(3000)
             event.accept()

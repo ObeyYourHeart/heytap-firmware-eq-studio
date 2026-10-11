@@ -1,6 +1,6 @@
 # 界面审查与重构记录（2026-10-11）
 
-分支 `feat/claude-ux`，基线 `feat/python-desktop-studio` 的 `e73704c`（与交接文档的 `e62d5d1` 只差一个文档提交）。本记录对应提交 `8366b70`..`cdf91d5`。
+分支 `feat/claude-ux`，基线 `feat/python-desktop-studio` 的 `e73704c`（与交接文档的 `e62d5d1` 只差一个文档提交）。本记录对应提交 `8366b70` 起的 `feat/claude-ux` 系列提交。
 
 ## 截图方法
 
@@ -30,7 +30,7 @@
 
 | 窗口 | 重构前图形 | 重构后图形 |
 | --- | --- | --- |
-| 1028×749 | 914×258 | 614×538 |
+| 1028×749 | 914×258 | 904×538（侧栏自动收起为步骤条；展开时 614×538） |
 | 1366×768 | 1252×258 | 952×557 |
 | 1920×1080 | 1806×547 | 1506×869 |
 
@@ -44,6 +44,8 @@
 主要变化：
 
 - 左侧工作流侧栏（原始频响 → 目标 → 修正 EQ → 固件预设 → 导出），每步一行状态；在线选择在载入测量后自动收起；固件相关控件只在识别固件后出现，特殊配置单独排列。
+- 窗口窄于 1200 px 时侧栏收成 40 px 的步骤条（①–⑤，完成的步骤高亮），点击某一步展开并滚动到对应卡片；只在跨过阈值时自动切换，手动选择会保持（Ctrl+B）。
+- 生成修正改为 ③ 内的设置面板：修改模式、频段、强度、平滑、最大提升／衰减或对齐后，后台重新拟合并以“生成预览”虚线显示，应用前不改变修正 EQ；“应用到修正 EQ”是一步可撤销的操作。预览按输入签名（测量、目标、设置、固件估计上下文）校验，过期结果直接丢弃。
 - 图例即曲线开关（另有“视图 → 曲线”），只列出当前可用曲线；模型假设移到图形标题栏的提示标签；切换测量或目标时自动适配 dB 范围；手势说明收进“?”。
 - 外观：跟随系统／浅色／深色 + 四种强调色，Qt 与图形共用一套颜色；Windows 切换配色时实时跟随。
 - 参数表与固件信息改为停靠面板；状态栏只在有任务时显示进度和“取消”。
@@ -59,21 +61,21 @@
 | ![](ux-review/baseline-empty-1366x768.png) | ![](ux-review/after-light-empty-1366x768.png) |
 | ![](ux-review/baseline-dialog-fit-to-preset.png) | ![](ux-review/after-light-dialog-fit-to-preset.png) |
 | ![](ux-review/baseline-dialog-export.png) | ![](ux-review/after-dark-dialog-export.png) |
-| ![](ux-review/baseline-dialog-generate-correction.png) | ![](ux-review/after-dark-dialog-generate-correction.png) |
+| ![](ux-review/baseline-dialog-generate-correction.png) | ![](ux-review/after-dark-generator-1366x768.png) |
+| ![](ux-review/baseline-tuning-1028x749.png) | ![](ux-review/after-light-generator-rail-open-1028x749.png) |
 
 ## 验证
 
-- 本地 Windows 11，Python 3.11.9 + `requirements-ci.txt` 锁定依赖：`pytest` 70 项通过（原 53 项 + 主题 11 项 + 外壳 6 项），`ruff check .` 通过。
+- 本地 Windows 11，Python 3.11.9 + `requirements-ci.txt` 锁定依赖：`pytest` 73 项通过（原 53 项 + 主题 12 项 + 外壳 8 项），`ruff check .` 通过。
 - 前端：`npm test` 4 项（含新增纵轴适配），`npm run test:browser` 保留全部原有交互，并新增主题变量、图例开关、适配、Delete 键、空状态命令。
 - `python -m heytap_eq.app --smoke-test` 通过。
-- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包与 EXE 对比（`798b966` 已全部通过）。
+- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包、冻结 EXE 启动与两种 EXE 对比，`3d35610`（重构后的外壳）五个 job 全部通过。
 
 固件解析、DSP、拟合、写入与声学差分模型没有改动；工程 v4、撤销／重做、剪贴板格式保持兼容。
 
 ## 尚未完成
 
-- `gui.py` 仍有约 1650 行（行更短、按区域分段，但仍在一个类里）。下一步按“在线来源”“固件预设”“图形组合”拆分，并把曲线组合抽成不依赖 Qt 的函数单独测试。
-- 1028 宽时侧栏占 330 px，图形宽 614 px；可考虑可拖动宽度的记忆或窄屏自动收起侧栏。
-- 生成修正仍是模态对话框；可改为侧栏内联设置 + 实时预览。
-- 冻结 EXE 中的新界面需要等手动触发的打包运行验证；本机截图来自源码运行。
+- 主窗口已拆为 `gui.py`（核心）与 `gui_layout.py`、`gui_sources.py`、`gui_correction.py`、`gui_firmware.py`；曲线组合仍在 `refresh()` 中，可再抽成不依赖 Qt 的函数单独测试。
+- PEQ 拟合核心本身较慢：同一组输入 2 个 PEQ 约 0.07 s、4 个约 0.5 s、8 个约 12 s（`fitting.fit_response`，未改动）。预览可取消且不阻塞界面，但 8 个 PEQ 的预览要等十几秒；优化需改拟合核心（例如解析雅可比或向量化响应），应附数值回归后单独提交。
+- 截图来自源码运行；冻结 EXE 由 Actions 的启动检查验证。
 - 高对比度模式只跟随浅／深色，没有单独的高对比主题。

@@ -20,7 +20,7 @@ def test_every_theme_keeps_text_curves_and_accent_readable(mode, accent):
         assert theme.contrast(color, t["plot-bottom"]) >= 3, name
         assert theme.contrast(color, t["plot-top"]) >= 3, name
     assert set(resolved["curves"]) == {"original", "current", "estimated", "target", "planned",
-                                       "correction", "dac1", "dac2"}
+                                       "correction", "dac1", "dac2", "preview"}
     assert t["accent"] in theme.stylesheet(resolved)
 
 
@@ -56,3 +56,18 @@ def test_arrow_icons_follow_the_theme_and_are_referenced_by_the_style_sheet():
     sheet = theme.stylesheet(dark, {"down": "C:/with space/down.svg", "up": "C:/with space/up.svg"})
     assert 'url("C:/with space/down.svg")' in sheet and "QAbstractSpinBox::up-arrow" in sheet
     assert "::down-arrow" not in theme.stylesheet(dark)
+
+
+def test_translucent_tokens_use_rgba_in_qt_style_sheets():
+    import re
+
+    for mode in ("light", "dark"):
+        resolved = theme.resolve({"mode": mode, "accent": "teal"})
+        sheet = theme.stylesheet(resolved)
+        # Qt would read #RRGGBBAA as #AARRGGBB and tint checked buttons olive.
+        assert not re.search(r"#[0-9a-fA-F]{8}", sheet)
+        accent = resolved["tokens"]["accent"]
+        rgb = ", ".join(str(int(accent[i:i+2], 16)) for i in (1, 3, 5))
+        assert f"rgba({rgb}, 38)" in sheet
+    assert theme.qss_color("#3ccfb826") == "rgba(60, 207, 184, 38)"
+    assert theme.qss_color("#3ccfb8") == "#3ccfb8"

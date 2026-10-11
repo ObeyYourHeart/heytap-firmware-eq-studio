@@ -32,7 +32,10 @@ def test_graph_takes_the_height_freed_by_the_workflow_rail(tmp_path, qt_app):
     # The previous layout left 253-258 px for the graph at this size.
     assert web["height"] >= 420, web
     assert web["schema"] == 2 and web["legend"] >= 2
-    assert not window.advanced_controls.isVisible() and window.rail.isVisible()
+    # 1028 px is below the rail threshold: the rail folds into the step strip and the graph widens.
+    assert not window.advanced_controls.isVisible()
+    assert not window.rail.isVisible() and window.rail_strip.isVisible()
+    assert web["width"] >= 850, web
     window.close()
 
 
@@ -147,4 +150,69 @@ def test_published_payload_stays_compact(monkeypatch, tmp_path, qt_app):
     assert len(text) < 350_000, len(text)
     values = [v for curve in payload["curves"] for point in curve["points"] for v in point]
     assert all(round(v, 3) == v for v in values)
+    window.close()
+
+
+def test_rail_folds_on_narrow_windows_and_steps_reopen_it(tmp_path, qt_app):
+    window = MainWindow(recover=False, auto_path=tmp_path/"rail.json")
+    window.connect_flowmix = lambda: None
+    window.show()
+    qt_app.processEvents()
+    window._apply_rail_mode(1500)
+    assert window.rail.isVisible() and not window.rail_strip.isVisible() and window.rail_action.isChecked()
+    window._apply_rail_mode(1000)
+    assert not window.rail.isVisible() and window.rail_strip.isVisible() and not window.rail_action.isChecked()
+    window.step_buttons["correction"].click()
+    assert window.rail.isVisible() and window.cards["correction"].body.isVisible()
+    # A manual choice holds until the window crosses the threshold again.
+    window._apply_rail_mode(1010)
+    assert window.rail.isVisible()
+    window._apply_rail_mode(1500)
+    window._apply_rail_mode(1000)
+    assert not window.rail.isVisible()
+    window.rail_action.setChecked(True)
+    assert window.rail.isVisible() and not window.rail_strip.isVisible()
+    window.set_measurements([Measurement("Flat", [20, 1000, 20000], [80, 90, 80]).validate()])
+    assert window.step_buttons["measurement"].property("state") == "ok"
+    assert window.step_buttons["target"].property("state") == ""
+    window.close()
+
+
+def test_inline_generator_previews_without_editing_and_applies_once(tmp_path, qt_app):
+    window = MainWindow(recover=False, auto_path=tmp_path/"generator.json")
+    window.connect_flowmix = lambda: None
+    window.fit_target_button.setChecked(True)
+    assert "选择原始频响与目标频响" in window.preview_status.text()
+    window.set_measurements([Measurement("Flat", [20, 1000, 20000], [80, 80, 80]).validate()])
+    window.set_targets([Measurement("Target", [20, 1000, 20000], [2, 0, -1]).validate()])
+    assert wait(qt_app, lambda: window.correction_preview is not None)
+    history = len(window.session._undo)
+    assert not window.session.document.raw and not window.session.document.filters
+    assert any(c["name"].startswith("生成预览") for c in window.main_plot.curves)
+    assert "preview" in {item["key"] for item in window.main_plot.editor["legend"]}
+    window.apply_correction_preview()
+    assert len(window.session.document.raw) >= 127 and window.fit_report
+    assert len(window.session._undo) == history+1
+    assert window.correction_preview is None
+    assert not any(c["name"].startswith("生成预览") for c in window.main_plot.curves)
+    window.fit_count.setValue(2)  # Keeps the optimiser fast; 8 PEQ can take ~10 s.
+    window.fit_mode.setCurrentIndex(window.fit_mode.findData("PEQ"))
+    assert wait(qt_app, lambda: window.correction_preview is not None and window.correction_preview[0].filters,
+                steps=400)
+    assert window.session.document.raw and not window.session.document.filters
+    # A result computed for older inputs is discarded instead of being shown or applied.
+    stale = window._preview_sig
+    window.set_targets([Measurement("Other", [20, 1000, 20000], [-2, 0, 3]).validate()])
+    assert window._preview_sig != stale and window.correction_preview is None
+    window._preview_result(stale, window.session.document and (window.session.document, {"rates": {}}))
+    assert window.correction_preview is None
+    window.fit_low.setValue(5000)
+    window.fit_high.setValue(1000)
+    assert "起始频率" in window.preview_status.text() and not window.apply_preview_button.isEnabled()
+    window.fit_target_button.setChecked(False)
+    assert window.correction_preview is None and not window.generator_panel.isVisibleTo(window)
+    window.undo()  # the later target change
+    assert window.session.document.raw
+    window.undo()  # applying the preview was one global history step
+    assert not window.session.document.raw
     window.close()

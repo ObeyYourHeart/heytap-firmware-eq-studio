@@ -3,7 +3,6 @@
 from PySide6 import QtWidgets
 
 from heytap_eq.configuration import config, configurations
-from heytap_eq.fitting import FitOptions
 from heytap_eq.widgets import label, mark
 
 
@@ -43,59 +42,6 @@ def _spin(low, high, value, suffix="", decimals=2, step=1.):
     spin.setValue(value)
     spin.setSuffix(suffix)
     return spin
-
-
-def correction_options(parent):
-    """Settings for measurement → target correction; returns (mode, FitOptions) or None."""
-    dialog, layout, form = _dialog(parent, "生成修正 EQ")
-    mode = QtWidgets.QComboBox()
-    mode.addItem("RAW 曲线（逐点修正）", "RAW")
-    mode.addItem("PEQ 滤波器", "PEQ")
-    count = QtWidgets.QSpinBox()
-    count.setRange(1, 20)
-    count.setValue(8)
-    low, high = _spin(20, 20000, 20, " Hz", 0), _spin(20, 20000, 20000, " Hz", 0)
-    strength = QtWidgets.QSpinBox()
-    strength.setRange(1, 100)
-    strength.setValue(100)
-    strength.setSuffix(" %")
-    boost, cut = _spin(.1, 60, 12, " dB", 1), _spin(.1, 60, 24, " dB", 1)
-    smoothing = QtWidgets.QComboBox()
-    for title, value in (("不平滑", 0.), ("1/24 倍频程", 1/24), ("1/12 倍频程", 1/12), ("1/6 倍频程", 1/6),
-                         ("1/3 倍频程", 1/3)):
-        smoothing.addItem(title, value)
-    smoothing.setCurrentIndex(2)
-    align = QtWidgets.QCheckBox("按 1 kHz 对齐整体电平")
-    align.setChecked(True)
-    form.addRow("模式", mode)
-    form.addRow("PEQ 数量", count)
-    form.addRow("频段", _pair(low, high))
-    form.addRow("强度", strength)
-    form.addRow("最大提升", boost)
-    form.addRow("最大衰减", cut)
-    form.addRow("平滑", smoothing)
-    form.addRow("", align)
-    mode.currentIndexChanged.connect(lambda: form.setRowVisible(count, mode.currentData() == "PEQ"))
-    form.setRowVisible(count, False)
-    layout.addWidget(label("结果替换当前修正 EQ，可以撤销；不需要打开固件。", "muted"))
-    accept = _buttons(dialog, layout, "生成")
-    low.valueChanged.connect(lambda: accept.setEnabled(low.value() < high.value()))
-    high.valueChanged.connect(lambda: accept.setEnabled(low.value() < high.value()))
-    if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-        return None
-    return mode.currentData(), FitOptions(low.value(), high.value(), 1000 if align.isChecked() else None,
-                                          strength.value()/100, smoothing.currentData(), boost.value(),
-                                          cut.value(), count.value())
-
-
-def _pair(a, b):
-    body = QtWidgets.QWidget()
-    layout = QtWidgets.QHBoxLayout(body)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(a, 1)
-    layout.addWidget(QtWidgets.QLabel("至"))
-    layout.addWidget(b, 1)
-    return body
 
 
 def firmware_fit(parent, bank, baseline_key, preamp_db):

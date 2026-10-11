@@ -63,6 +63,7 @@ class StepCard(QtWidgets.QFrame):
     def __init__(self, number, title, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
+        self.done = False
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 10)
         outer.setSpacing(6)
@@ -93,6 +94,7 @@ class StepCard(QtWidgets.QFrame):
         return widget
 
     def set_summary(self, text, done=False, warn=False):
+        self.done = done
         self.summary.setText(text)
         self.summary.setVisible(bool(text))
         mark(self.summary, "muted", "warn" if warn else None)

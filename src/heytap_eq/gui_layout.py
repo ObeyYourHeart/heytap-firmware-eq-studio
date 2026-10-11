@@ -6,11 +6,15 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from heytap_eq import theme as themes
 from heytap_eq.session import atomic_json
 from heytap_eq.web_plot import ResponsePlot
-from heytap_eq.widgets import StepCard, apply_palette, button, label, row, write_icons
+from heytap_eq.widgets import StepCard, apply_palette, button, label, mark, row, write_icons
 
 CURVES = (("original", "原始实测", True), ("current", "当前固件估计", True), ("estimated", "编辑后估计", True),
-          ("target", "目标频响", True), ("planned", "待导出估计", True), ("correction", "修正 EQ", False),
-          ("dac1", "DAC1（输出1）", False), ("dac2", "DAC2（输出2）", False))
+          ("target", "目标频响", True), ("planned", "待导出估计", True), ("preview", "生成预览", True),
+          ("correction", "修正 EQ", False), ("dac1", "DAC1（输出1）", False), ("dac2", "DAC2（输出2）", False))
+# Below this window width the rail folds into a strip of step buttons, giving the graph the room.
+RAIL_COLLAPSE_WIDTH = 1200
+STEPS = (("measurement", "原始频响"), ("target", "目标频响"), ("correction", "修正 EQ"),
+         ("firmware", "固件预设"), ("export", "导出"))
 DAC_MODES = (("chain", "滤波链"), ("difference", "相对参考差分"))
 
 
@@ -32,19 +36,23 @@ class LayoutMixin:
         self._build_menus()
         self._build_toolbar()
         self.rail = self._build_rail()
+        self.rail_strip = self._build_strip()
         self.main_plot = ResponsePlot("dB · 相对频响／EQ 增益")
         # Compatibility aliases refer to the same view, never two independent graphs.
         self.digital_plot = self.acoustic_plot = self.main_plot
         self.split = QtWidgets.QSplitter()
+        self.split.setChildrenCollapsible(False)
+        self.split.addWidget(self.rail_strip)
         self.split.addWidget(self.rail)
         self.split.addWidget(self.main_plot)
-        self.split.setStretchFactor(1, 1)
-        self.split.setCollapsible(1, False)
-        self.split.setSizes([330, max(400, self.width()-330)])
+        self.split.setStretchFactor(2, 1)
+        self.split.setSizes([40, 330, max(400, self.width()-330)])
+        self.rail_strip.hide()
+        self._rail_narrow = None
         self.setCentralWidget(self.split)
         self._build_docks()
         self._build_status()
-        self.rail_action.toggled.connect(self.rail.setVisible)
+        self.rail_action.toggled.connect(self.set_rail_expanded)
         self.main_plot.editRequested.connect(self.editor_event)
         self.main_plot.error.connect(lambda message: self.statusBar().showMessage(message))
         self._peq_map = []
@@ -66,6 +74,9 @@ class LayoutMixin:
         edit = bar.addMenu("编辑")
         self.undo_action = self._action(edit, "撤销", self.undo, "Ctrl+Z")
         self.redo_action = self._action(edit, "重做", self.redo, QtGui.QKeySequence("Ctrl+Shift+Z"))
+        edit.addSeparator()
+        self._action(edit, "生成修正 EQ…", self.start_fit, "Ctrl+G",
+                     tip="打开 ③ 中的生成设置，应用前实时预览")
         edit.addSeparator()
         self.copy_action = self._action(edit, "复制调音", self.copy_tuning, "Ctrl+Shift+C",
                                         tip="复制 RAW／PEQ、启用状态与测量、目标、参考关联")
@@ -180,8 +191,14 @@ class LayoutMixin:
         body.setObjectName("railBody")
         scroll.setWidget(body)
         layout = QtWidgets.QVBoxLayout(body)
-        layout.setContentsMargins(8, 8, 6, 8)
+        layout.setContentsMargins(8, 6, 6, 8)
         layout.setSpacing(8)
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(label("工作流", "section", wrap=False))
+        header.addStretch()
+        header.addWidget(button("«", lambda: self.set_rail_expanded(False), flat=True,
+                                tooltip="收起侧栏（Ctrl+B）"))
+        layout.addLayout(header)
         self.cards = {}
 
         card = self.cards["measurement"] = StepCard(1, "原始频响")
@@ -256,9 +273,11 @@ class LayoutMixin:
         self.quality_label = label("", "muted")
         self.quality_label.hide()
         card.add(self.quality_label)
-        self.fit_target_button = button("生成修正 EQ…", self.start_fit, primary=True,
-                                        tooltip="根据原始与目标频响生成 RAW 或 PEQ 修正")
+        self.fit_target_button = button("▸ 生成修正 EQ", checkable=True,
+                                        tooltip="根据原始与目标频响生成 RAW 或 PEQ 修正，应用前实时预览")
+        self.fit_target_button.toggled.connect(self.generator_toggled)
         card.add(self.fit_target_button)
+        card.add(self._build_generator())
         card.add(row(button("导入…", self.import_eq), button("导出…", self.export_eq)))
         self.side_button = button("参数表", checkable=True, tooltip="显示 PEQ 与当前固件滤波器表格")
         card.add(self.side_button)
@@ -338,6 +357,63 @@ class LayoutMixin:
         layout.addWidget(card)
         layout.addStretch()
         return scroll
+
+    def _build_strip(self):
+        strip = QtWidgets.QWidget()
+        strip.setObjectName("railStrip")
+        strip.setFixedWidth(40)
+        layout = QtWidgets.QVBoxLayout(strip)
+        layout.setContentsMargins(6, 8, 6, 8)
+        layout.setSpacing(8)
+        expand = QtWidgets.QToolButton()
+        expand.setText("»")
+        expand.setAutoRaise(True)
+        expand.setToolTip("展开工作流侧栏（Ctrl+B）")
+        expand.clicked.connect(lambda: self.set_rail_expanded(True))
+        layout.addWidget(expand, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+        self.step_buttons = {}
+        for number, (key, title) in enumerate(STEPS, 1):
+            step = QtWidgets.QToolButton()
+            step.setText(str(number))
+            step.setProperty("role", "stepButton")
+            step.setToolTip(title)
+            step.clicked.connect(lambda checked=False, key=key: self.show_step(key))
+            layout.addWidget(step, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+            self.step_buttons[key] = step
+        layout.addStretch()
+        return strip
+
+    def set_rail_expanded(self, expanded):
+        self.rail.setVisible(expanded)
+        self.rail_strip.setVisible(not expanded)
+        self.rail_action.blockSignals(True)
+        self.rail_action.setChecked(expanded)
+        self.rail_action.blockSignals(False)
+
+    def show_step(self, key):
+        self.set_rail_expanded(True)
+        card = self.cards[key]
+        card.set_expanded(True)
+        # The context object cancels the call if the window is gone before it runs.
+        QtCore.QTimer.singleShot(0, self.rail, lambda: self.rail.ensureWidgetVisible(card, 0, 8))
+
+    def _apply_rail_mode(self, width=None):
+        """Fold or unfold only when the window crosses the threshold, so manual choices stick."""
+        narrow = (self.width() if width is None else width) < RAIL_COLLAPSE_WIDTH
+        if narrow != self._rail_narrow:
+            self._rail_narrow = narrow
+            self.set_rail_expanded(not narrow)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "rail_strip"):
+            self._apply_rail_mode()
+
+    def _update_steps(self):
+        for key, step in self.step_buttons.items():
+            card = self.cards[key]
+            mark(step, "stepButton", "ok" if card.done else None)
+            step.setToolTip(card.title.text()+("：" + card.summary.text() if card.summary.text() else ""))
 
     def _build_docks(self):
         self.side = QtWidgets.QWidget()

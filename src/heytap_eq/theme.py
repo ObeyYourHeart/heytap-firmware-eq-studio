@@ -36,9 +36,11 @@ BASE = {
 # amber dashed = target, coral dashed = pending export, violet/pink = the two digital outputs.
 CURVES = {
     "dark": {"original": "#6fa8dc", "current": "#a9c9ef", "estimated": "#3ccfb8", "target": "#f2c14e",
-             "planned": "#ff8a5c", "correction": "#e6dcc4", "dac1": "#b48cf2", "dac2": "#f07ab0"},
+             "planned": "#ff8a5c", "correction": "#e6dcc4", "dac1": "#b48cf2", "dac2": "#f07ab0",
+             "preview": "#b9e769"},
     "light": {"original": "#2f6fb0", "current": "#4f80bd", "estimated": "#0f9d8a", "target": "#b07800",
-              "planned": "#d9541e", "correction": "#6b5e45", "dac1": "#7b4fd6", "dac2": "#c4407f"},
+              "planned": "#d9541e", "correction": "#6b5e45", "dac1": "#7b4fd6", "dac2": "#c4407f",
+              "preview": "#4f8a10"},
 }
 
 
@@ -116,8 +118,16 @@ QToolButton::menu-indicator {{ image: url("{icons['down']}"); width: 9px; height
 """
 
 
+def qss_color(value):
+    """CSS reads #RRGGBBAA but Qt style sheets read 8-digit hex as #AARRGGBB; use rgba() for Qt."""
+    if len(value) == 9:
+        r, g, b, a = (int(value[i:i+2], 16) for i in (1, 3, 5, 7))
+        return f"rgba({r}, {g}, {b}, {a})"
+    return value
+
+
 def stylesheet(theme, icons=None):
-    t = theme["tokens"]
+    t = {key: qss_color(value) for key, value in theme["tokens"].items()}
     return _arrows(icons)+f"""
 QMainWindow, QDialog {{ background: {t['bg']}; }}
 QWidget {{ color: {t['text']}; font-size: 12px; }}
@@ -165,6 +175,11 @@ QLabel[role="step"] {{ background: {t['surface-3']}; color: {t['muted']}; border
     min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; qproperty-alignment: AlignCenter; }}
 QLabel[role="step"][state="ok"] {{ background: {t['accent']}; color: {t['accent-text']}; }}
 QLabel[role="cardTitle"] {{ font-weight: 600; font-size: 13px; }}
+QWidget#railStrip {{ background: {t['bg']}; }}
+QToolButton[role="stepButton"] {{ background: {t['surface-3']}; color: {t['muted']}; font-weight: 600; padding: 0;
+    border-radius: 13px; min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; }}
+QToolButton[role="stepButton"][state="ok"] {{ background: {t['accent']}; color: {t['accent-text']}; }}
+QToolButton[role="stepButton"]:hover {{ border: 1px solid {t['accent']}; }}
 QLabel[role="muted"], QLabel[role="section"] {{ color: {t['muted']}; }}
 QLabel[role="section"] {{ font-size: 11px; margin-top: 4px; }}
 QLabel[state="warn"] {{ color: {t['warn']}; }}
