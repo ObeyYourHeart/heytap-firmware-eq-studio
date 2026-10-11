@@ -95,10 +95,12 @@ def test_firmware_actions_follow_state_and_plan_removal_is_undoable(monkeypatch,
     window.connect_flowmix = lambda: None
     window.show()
     assert not window.fit_action.isEnabled() and not window.export_action.isEnabled()
-    assert window.firmware_hint.isVisibleTo(window) and not window.firmware_body.isVisibleTo(window)
+    # Relative to the rail: on small screens the window opens below the fold width and the rail is hidden.
+    rail = window.rail
+    assert window.firmware_hint.isVisibleTo(rail) and not window.firmware_body.isVisibleTo(rail)
     window.set_firmware(synthetic_firmware(monkeypatch, tmp_path))
     assert window.fit_action.isEnabled() and not window.export_action.isEnabled()
-    assert window.firmware_body.isVisibleTo(window) and window.reference_block.isVisibleTo(window)
+    assert window.firmware_body.isVisibleTo(rail) and window.reference_block.isVisibleTo(rail)
     assert "special:45" in window.preset_buttons
     window.set_document(parse_text("[PEQ]\nPEQ1: 1200 -2 1 PEAK"))
     window.fit_firmware_preset("清亮高音")
@@ -210,7 +212,7 @@ def test_inline_generator_previews_without_editing_and_applies_once(tmp_path, qt
     window.fit_high.setValue(1000)
     assert "起始频率" in window.preview_status.text() and not window.apply_preview_button.isEnabled()
     window.fit_target_button.setChecked(False)
-    assert window.correction_preview is None and not window.generator_panel.isVisibleTo(window)
+    assert window.correction_preview is None and not window.generator_panel.isVisibleTo(window.rail)
     window.undo()  # the later target change
     assert window.session.document.raw
     window.undo()  # applying the preview was one global history step
