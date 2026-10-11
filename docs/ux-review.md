@@ -69,7 +69,8 @@
 - 本地 Windows 11，Python 3.11.9 + `requirements-ci.txt` 锁定依赖：`pytest` 73 项通过（原 53 项 + 主题 12 项 + 外壳 8 项），`ruff check .` 通过。
 - 前端：`npm test` 4 项（含新增纵轴适配），`npm run test:browser` 保留全部原有交互，并新增主题变量、图例开关、适配、Delete 键、空状态命令。
 - `python -m heytap_eq.app --smoke-test` 通过。
-- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包、冻结 EXE 启动与两种 EXE 对比，`3d35610`（重构后的外壳）五个 job 全部通过。
+- fork Actions：push 只跑检查；手动运行包含 PyInstaller／Nuitka 打包、冻结 EXE 启动与两种 EXE 对比。`3d35610`（重构后的外壳）与 `5a9df28`（侧栏折叠 + 内联生成修正）五个 job 全部通过。
+- Windows runner 屏幕较小，窗口启动即低于 1200 px、侧栏为折叠状态；本地用 `QT_SCALE_FACTOR=1.1` 复现同一条件，外壳测试全部通过。
 
 固件解析、DSP、拟合、写入与声学差分模型没有改动；工程 v4、撤销／重做、剪贴板格式保持兼容。
 
