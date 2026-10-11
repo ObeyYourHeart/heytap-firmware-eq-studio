@@ -1,10 +1,18 @@
-"""Bundled DSSSP editor inside Qt; DSP and edits remain in Python."""
+"""Bundled DSSSP editor inside Qt; DSP and edits remain in Python.
+
+Wire format (schema 2): Python publishes one JSON payload per refresh (curves, editable
+filters/RAW, legend toggles, notice, theme tokens, one-shot reset/fit view requests); the
+page submits gesture events {op: begin|add|filter|raw|delete|view|command}. Python
+validates every event before it touches the session.
+"""
 
 import json
 from pathlib import Path
 
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWebChannel, QtWebEngineCore, QtWebEngineWidgets, QtWidgets
+
+SCHEMA = 2
 
 
 class PlotBridge(QtCore.QObject):
@@ -41,6 +49,8 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
         self.curves = []
         self.low, self.high = -24., 24.
         self.reset_requested = True
+        self.fit_requested = False
+        self.theme = None
         self.editor = {}
         self.bridge = PlotBridge(self)
         self.channel = QtWebChannel.QWebChannel(self.page())
@@ -61,6 +71,16 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
     def reset_range(self, low=-24., high=24., step=6):
         self.low, self.high = float(low), float(high)
         self.reset_requested = True
+
+    def request_fit(self):
+        """Fit the dB axis to the curves of the next published payload."""
+        self.fit_requested = True
+
+    def set_theme(self, theme):
+        self.theme = theme
+        if theme:
+            self.page().setBackgroundColor(QtGui.QColor(theme["tokens"]["bg"]))
+        self.commit()
 
     def setLabel(self, axis, text, **_):
         if axis == "left":
@@ -92,11 +112,12 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
     def commit(self):
         if not self.is_ready:
             return
-        payload = {"curves": self.curves, "low": self.low, "high": self.high,
-                   "reset": self.reset_requested, "axisLabel": self.axis_label,
+        payload = {"schema": SCHEMA, "curves": self.curves, "low": self.low, "high": self.high,
+                   "reset": self.reset_requested, "fit": self.fit_requested,
+                   "axisLabel": self.axis_label, "theme": self.theme, "legend": [],
                    "filters": [], "raw": [], **self.editor}
         self.bridge.publish.emit(json.dumps(payload, ensure_ascii=False, allow_nan=False))
-        self.reset_requested = False
+        self.reset_requested = self.fit_requested = False
 
     def inspect(self, callback):
         # PySide/Qt versions differ in conversion of JS objects to QVariant.

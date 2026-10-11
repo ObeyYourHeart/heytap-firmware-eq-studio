@@ -74,3 +74,27 @@ export function frequencyTicks(view, width) {
     return true
   })
 }
+
+export const formatHz = f => f >= 1000 ? `${Number((f / 1000).toFixed(2))}k` : `${Math.round(f)}`
+
+// Vertical range that shows every visible curve inside the current frequency window,
+// padded and snapped to the grid step so the axis labels stay round.
+export function fitGain(curves, view, { padding = 3, step = 5, minSpan = 12 } = {}) {
+  let low = Infinity, high = -Infinity
+  for (const curve of curves) {
+    for (const [frequency, gain] of curve.points) {
+      if (frequency < view.minFreq || frequency > view.maxFreq || !Number.isFinite(gain)) continue
+      low = Math.min(low, gain)
+      high = Math.max(high, gain)
+    }
+  }
+  if (!Number.isFinite(low)) return null
+  low = Math.floor((low - padding) / step) * step
+  high = Math.ceil((high + padding) / step) * step
+  if (high - low < minSpan) {
+    const middle = (low + high) / 2
+    low = Math.floor((middle - minSpan / 2) / step) * step
+    high = low + Math.ceil(minSpan / step) * step
+  }
+  return { minGain: clamp(low, -100, 110), maxGain: clamp(high, -90, 120) }
+}

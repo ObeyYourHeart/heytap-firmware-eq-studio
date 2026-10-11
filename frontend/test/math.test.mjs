@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { frequencyAt, gainAt, xAt, yAt, resample, zoom, pan, frequencyTicks } from '../src/math.mjs'
+import { frequencyAt, gainAt, xAt, yAt, resample, zoom, pan, frequencyTicks, fitGain } from '../src/math.mjs'
 
 const view = { minFreq: 20, maxFreq: 20000, minGain: -24, maxGain: 24 }
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`)
@@ -33,4 +33,15 @@ test('panning and zooming stay inside the audible frequency limits', () => {
   close(reset.minFreq, 20)
   close(reset.maxFreq, 20000)
   assert.ok(frequencyTicks({ ...view, minFreq: 8000, maxFreq: 9500 }, 800).includes(9000))
+})
+
+test('auto-fit covers visible curves with padded, grid-aligned limits', () => {
+  const curves = [{ points: [[20, -40], [100, -6], [1000, 0], [8000, 9.2], [20000, 50]] },
+    { points: [[200, 2], [5000, -1]] }]
+  const fitted = fitGain(curves, { ...view, minFreq: 50, maxFreq: 10000 })
+  assert.deepEqual(fitted, { minGain: -10, maxGain: 15 })
+  const flat = fitGain([{ points: [[20, 1], [20000, 1.5]] }], view)
+  assert.ok(flat.maxGain - flat.minGain >= 12 && flat.minGain <= 1 && flat.maxGain >= 1.5)
+  assert.equal(fitGain([], view), null)
+  assert.equal(fitGain([{ points: [[20, NaN]] }], view), null)
 })
