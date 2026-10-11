@@ -74,9 +74,24 @@
 
 固件解析、DSP、拟合、写入与声学差分模型没有改动；工程 v4、撤销／重做、剪贴板格式保持兼容。
 
+## PEQ 拟合提速
+
+`fitting.fit_response` 的 PEQ 模式原来在每次目标函数调用里为每个滤波器、每个采样率分别构造并校验 `Filter`、调用一次 `firmware_dsp.coefficients`；8 个 PEQ 一次拟合约 9.4 万次调用，87% 的时间耗在这里。现在由 `peak_chain_response` 一次算出所有滤波器、三个采样率的 PEAK 级联，公式与 `firmware_dsp` 第 1 类相同，优化器与参数不变。另外 `least_squares` 每步的小矩阵 SVD 在 24 线程 OpenBLAS 下慢约 11 倍（6.6 ms 对 0.58 ms），程序启动时默认单线程（作者的 CI 基准本来就这样设置），用户自行设置的环境变量优先。
+
+| 本机 · 5 组输入（3 组为 ReaLab 测量，未入库） | 原来 | 现在 |
+| --- | --- | --- |
+| 2 个 PEQ | 0.06–0.13 s | 0.01–0.02 s |
+| 4 个 PEQ | 0.47–1.6 s | 0.03–0.13 s |
+| 8 个 PEQ | 5.5–11.5 s | 0.26–0.64 s |
+| 12 个 PEQ | — | 1.0–1.4 s |
+| 20 个 PEQ | 约 1–2 分钟（估计） | 2.9–4.3 s |
+
+结果对照：2／4／8 个 PEQ 的 15 组拟合与原实现逐位相同（滤波器参数与各采样率误差）；300 组随机滤波器链的响应逐位相同。单线程 BLAS 只改变 20 个 PEQ 中 4 组的舍入路径，RMS 有升有降（例如 0.110→0.074、0.037→0.049 dB），这类长链拟合本来就随机器核数变化。也试过解析雅可比：20 个 PEQ 快 4–5 倍，但部分输入的最大误差从 0.22 dB 变成 2.2 dB，没有采用。
+
+回归测试：`test_vectorised_peak_chain_matches_the_firmware_biquads`、`test_peq_fit_is_unchanged_from_the_per_filter_objective`（用原目标函数重新拟合并比较）、`test_eight_peq_fit_stays_interactive`；`--benchmark` 新增 8 个 PEQ 的工作量，两种 EXE 的结果在 CI 中互相比对。固件预设拟合（`firmware_edit.fit_record`，每条约 3 s）属于写入链路，没有改动。
+
 ## 尚未完成
 
 - 主窗口已拆为 `gui.py`（核心）与 `gui_layout.py`、`gui_sources.py`、`gui_correction.py`、`gui_firmware.py`；曲线组合仍在 `refresh()` 中，可再抽成不依赖 Qt 的函数单独测试。
-- PEQ 拟合核心本身较慢：同一组输入 2 个 PEQ 约 0.07 s、4 个约 0.5 s、8 个约 12 s（`fitting.fit_response`，未改动）。预览可取消且不阻塞界面，但 8 个 PEQ 的预览要等十几秒；优化需改拟合核心（例如解析雅可比或向量化响应），应附数值回归后单独提交。
 - 截图来自源码运行；冻结 EXE 由 Actions 的启动检查验证。
 - 高对比度模式只跟随浅／深色，没有单独的高对比主题。

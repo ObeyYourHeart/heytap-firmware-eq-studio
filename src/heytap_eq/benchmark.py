@@ -57,6 +57,13 @@ def workloads():
     assert quality["rates"]["48000"]["rms_db"] < .3
     outputs["measurement_fit_rms_db"] = quality["rates"]["48000"]["rms_db"]
     outputs["measurement_fit_db"] = correction(peq, frequency)[::4].tolist()
+    # The interactive default: eight PEQ checked at all three rates.
+    shaped = Measurement("Synthetic target", frequency.tolist(),
+                         (80+bell+6/(1+(frequency/105)**2)-4/(1+(9000/frequency)**4)).tolist())
+    started = time.perf_counter()
+    peq8, quality8 = fit_response(original, shaped, "PEQ", FitOptions(filters=8))
+    durations["measurement_peq_fit_8"] = time.perf_counter()-started
+    outputs["measurement_fit8_rms_db"] = {r: m["rms_db"] for r, m in quality8["rates"].items()}
 
     # Exercise the numerical RAW-to-firmware optimizer, not the exact PEQ cascade shortcut.
     source = {"gain0": -2., "gain1": -2., "count": 3, "slots": [

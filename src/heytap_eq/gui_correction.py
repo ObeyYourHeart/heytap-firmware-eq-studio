@@ -197,9 +197,9 @@ class CorrectionMixin:
         if signature[0] == "invalid":
             self._preview_message(signature[1], warn=True)
             return
-        slow = self.fit_mode.currentData() == "PEQ" and self.fit_count.value() > 4
-        # PEQ optimisation time grows quickly with the filter count (8 filters can take ~10 s).
-        self._preview_message("正在计算预览…"+("（PEQ 数量较多，可能需要十几秒）" if slow else ""))
+        slow = self.fit_mode.currentData() == "PEQ" and self.fit_count.value() > 12
+        # PEQ time still grows with the count: ~0.3 s for 8 filters, a few seconds for 20.
+        self._preview_message("正在计算预览…"+("（PEQ 数量较多，可能需要几秒）" if slow else ""))
         self.correction_timer.start()
 
     def _preview_message(self, text, warn=False):

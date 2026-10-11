@@ -1,6 +1,6 @@
 import threading
 
-from PySide6 import QtTest
+from PySide6 import QtCore
 
 from heytap_eq import theme
 from heytap_eq.eq_formats import parse_text
@@ -8,12 +8,20 @@ from heytap_eq.gui import MainWindow
 from heytap_eq.measurements import Measurement
 
 
+def pump(delay):
+    # QTest.qWait keeps the GIL in PySide6 6.8 and starves Python worker threads (a 0.3 s
+    # background fit took over 60 s); a nested event loop releases it as app.exec() does.
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(delay, loop.quit)
+    loop.exec()
+
+
 def wait(app, condition, steps=200, delay=25):
     for _ in range(steps):
         app.processEvents()
         if condition():
             return True
-        QtTest.QTest.qWait(delay)
+        pump(delay)
     return condition()
 
 
@@ -197,7 +205,6 @@ def test_inline_generator_previews_without_editing_and_applies_once(tmp_path, qt
     assert len(window.session._undo) == history+1
     assert window.correction_preview is None
     assert not any(c["name"].startswith("生成预览") for c in window.main_plot.curves)
-    window.fit_count.setValue(2)  # Keeps the optimiser fast; 8 PEQ can take ~10 s.
     window.fit_mode.setCurrentIndex(window.fit_mode.findData("PEQ"))
     assert wait(qt_app, lambda: window.correction_preview is not None and window.correction_preview[0].filters,
                 steps=400)

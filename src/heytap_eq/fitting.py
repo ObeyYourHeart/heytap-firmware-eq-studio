@@ -65,6 +65,27 @@ def common_grid(original, target, options, points=127):
     return frequency, desired, float(offset)
 
 
+def peak_chain_response(params, frequency, rates):
+    """dB response of a PEAK chain at every rate, shape (rates, frequencies).
+
+    params is the optimiser vector [ln fc, gain, ln Q] per filter. The biquad is the
+    firmware PEAK (type 1) formula from firmware_dsp.coefficients and the product matches
+    dsp.filter_response; it is evaluated for all filters and rates at once because the
+    optimiser calls it thousands of times per fit.
+    """
+    fc, gain, q = np.exp(params[0::3]), params[1::3], np.exp(params[2::3])
+    fs = np.asarray(rates, dtype=float)[:, None]
+    w = 2 * np.pi * fc / fs
+    c, alpha = np.cos(w), np.sin(w) / (2 * q)
+    A = 10 ** (gain / 40)
+    a0 = 1 + alpha / A
+    b0, b1, b2 = ((1 + alpha * A) / a0)[..., None], (-2 * c / a0)[..., None], ((1 - alpha * A) / a0)[..., None]
+    a1, a2 = b1, ((1 - alpha / A) / a0)[..., None]
+    z = np.exp(-2j*np.pi*np.asarray(frequency)/fs)[:, None, :]
+    h = np.prod((b0+b1*z+b2*z*z)/(1+a1*z+a2*z*z), axis=1)
+    return 20*np.log10(np.maximum(abs(h), 1e-30))
+
+
 def fit_response(original, target, mode="RAW", options=None, cancelled=None):
     options = options or FitOptions()
     cancelled = cancelled or threading.Event()
@@ -107,9 +128,7 @@ def fit_response(original, target, mode="RAW", options=None, cancelled=None):
 
             def objective(params):
                 check_cancel()
-                chain = filters(params)
-                return np.concatenate([filter_response(chain, frequency, fs)-desired
-                                       for fs in options.sample_rates])
+                return (peak_chain_response(params, frequency, options.sample_rates)-desired).ravel()
 
             result = least_squares(objective, initial, bounds=(low, high), max_nfev=70)
             doc.filters = filters(result.x)
