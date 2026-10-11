@@ -74,6 +74,10 @@
 
 固件解析、DSP、拟合、写入与声学差分模型没有改动；工程 v4、撤销／重做、剪贴板格式保持兼容。
 
+## 曲线组合
+
+主窗口拆为 `gui.py`（核心）与 `gui_layout.py`、`gui_sources.py`、`gui_correction.py`、`gui_firmware.py`。图上显示哪些曲线、图例和模型提示由不依赖 Qt 的 `composition.compose(View)` 决定，`refresh()` 只收集控件状态并绘制结果。重构前后对 12 种窗口状态（空窗口、只有修正、测量＋目标、RAW＋PEQ、生成预览、固件差分与不确定频段、DAC 链／差分模式、待导出计划、隐藏曲线与相对刻度、RAW 节点关闭）比较了发往图形的完整数据，全部相同。`tests/test_composition.py` 在没有窗口的情况下检查 1 kHz 对齐、估计 = 实测 + 固件差分 + 修正、预览不改变修正、差分失败时的提示和 DAC 模式。
+
 ## PEQ 拟合提速
 
 `fitting.fit_response` 的 PEQ 模式原来在每次目标函数调用里为每个滤波器、每个采样率分别构造并校验 `Filter`、调用一次 `firmware_dsp.coefficients`；8 个 PEQ 一次拟合约 9.4 万次调用，87% 的时间耗在这里。现在由 `peak_chain_response` 一次算出所有滤波器、三个采样率的 PEAK 级联，公式与 `firmware_dsp` 第 1 类相同，优化器与参数不变。另外 `least_squares` 每步的小矩阵 SVD 在 24 线程 OpenBLAS 下慢约 11 倍（6.6 ms 对 0.58 ms），程序启动时默认单线程（作者的 CI 基准本来就这样设置），用户自行设置的环境变量优先。
@@ -92,6 +96,5 @@
 
 ## 尚未完成
 
-- 主窗口已拆为 `gui.py`（核心）与 `gui_layout.py`、`gui_sources.py`、`gui_correction.py`、`gui_firmware.py`；曲线组合仍在 `refresh()` 中，可再抽成不依赖 Qt 的函数单独测试。
 - 截图来自源码运行；冻结 EXE 由 Actions 的启动检查验证。
 - 高对比度模式只跟随浅／深色，没有单独的高对比主题。

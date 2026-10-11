@@ -11,16 +11,14 @@ import threading
 from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from heytap_eq import theme as themes
 from heytap_eq.clipboard import MIME, PRESET_SCHEMA, copy_plan, decode_text, tuning_payload
-from heytap_eq.configuration import config, configurations, record_at, tables_for
-from heytap_eq.dsp import correction, firmware_curve
+from heytap_eq.composition import View, compose
+from heytap_eq.configuration import config, configurations
 from heytap_eq.eq_formats import Filter, dump_eq, load_eq
 from heytap_eq.firmware_dsp import FILTER_TYPES
-from heytap_eq.firmware_dsp import response as firmware_response
 from heytap_eq.flowmix import FlowmixClient
 from heytap_eq.gui_correction import CorrectionMixin
 from heytap_eq.gui_firmware import FirmwareMixin
@@ -551,165 +549,40 @@ class MainWindow(LayoutMixin, SourcesMixin, CorrectionMixin, FirmwareMixin, QtWi
         doc = self._preview_document or self.session.document
         bank = self.firmware.profiles if self.firmware else None
         key = self.current_key()
-        colors = self.theme["curves"]
-        special = bool(bank and key and config(bank, key).get("special"))
-        frequency = np.geomspace(20, 20000, 2048)
         fs = int(self.rate_combo.currentText())
-        state = 0 if special else max(0, self.state_combo.currentIndex())
-        raw_doc = copy.deepcopy(doc)
-        raw_doc.filters = []
-        raw_values, eq_values = correction(raw_doc, frequency, fs), correction(doc, frequency, fs)
-        self.main_plot.clear_curves()
-        difference, difference_error = None, ""
-        try:
-            difference = self.difference(frequency)
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
-            difference_error = str(exc)
-        records = []
-        plan = next((p for p in self.session.firmware_plans if p["destination"] == key), None)
-        if plan is None:
-            plan = next((p for p in reversed(self.session.firmware_plans) if p.get("baseline") == key), None)
-        if bank and key:
-            for role in sorted(tables_for(bank, self.region_combo.currentText()), key=lambda r: r["output"]):
-                record = record_at(bank, role["name"], key, state)
-                records.append((role, record))
-                if self.curve_checks["dac"+role["output"]].isChecked():
-                    color = colors["dac"+role["output"]]
-                    show_difference = self.dac_mode() == "difference"
-                    if show_difference and difference:
-                        self.main_plot.plot(frequency, difference["branches"][role["output"]], color=color,
-                            name=f"DAC{role['output']} · 相对参考差分")
-                    elif not show_difference:
-                        self.main_plot.plot(frequency, firmware_curve(record, frequency, fs), color=color,
-                            name=f"DAC{role['output']} · 当前滤波增益")
-                    if plan and not show_difference:
-                        planned = next(c["record"] for c in plan["records"]
-                                       if c["table"] == role["name"] and c["state"] == state)
-                        self.main_plot.plot(frequency, firmware_response(planned["filters"], frequency, fs), color=color,
-                            dashed=True, name=f"DAC{role['output']} · 待导出 {plan['destination']}")
-        base, spl_offset, bands = np.zeros_like(frequency), 0., []
-        measurement_index = self.measurement_combo.currentIndex()
-        has_measurement = 0 <= measurement_index < len(self.measurements)
-        target_index = self.target_combo.currentIndex()
-        has_target = 0 <= target_index < len(self.targets)
-        planned_curve = False
-        if has_measurement:
-            m = self.measurements[measurement_index]
-            x, values = np.asarray(m.frequencies), np.asarray(m.spl_values)
-            spl_offset = float(np.interp(np.log(1000), np.log(x), values))
-            values = values-spl_offset
-            base = np.interp(np.log(frequency), np.log(x), values)
-            visible = (frequency >= x[0]) & (frequency <= x[-1])
-            if self.curve_checks["original"].isChecked():
-                self.main_plot.plot(x, values, color=colors["original"], name="原始实测")
-            if difference:
-                base += difference["delta"]
-                if self.curve_checks["current"].isChecked():
-                    self.main_plot.plot(frequency[visible], base[visible], color=colors["current"], dashed=True,
-                                        name="当前固件估计")
-                if difference["uncertain_band"]:
-                    bands.append({"low": difference["uncertain_band"][0], "high": difference["uncertain_band"][1],
-                                  "label": "双单元交叠 · 模型近似"})
-            if self.curve_checks["estimated"].isChecked():
-                self.main_plot.plot(frequency[visible], (base+eq_values)[visible], color=colors["estimated"],
-                                    name="编辑后估计", width=2.5)
-            if self.correction_preview and self.curve_checks["preview"].isChecked():
-                preview_values = correction(self.correction_preview[0], frequency, fs)
-                self.main_plot.plot(frequency[visible], (base+preview_values)[visible], color=colors["preview"],
-                                    dashed=True, name="生成预览 · 应用后估计")
-            if plan:
-                try:
-                    pending = self.difference(frequency, [plan], plan["destination"])
-                    if pending:
-                        planned_curve = True
-                        if self.curve_checks["planned"].isChecked():
-                            original = np.interp(np.log(frequency), np.log(x), values)
-                            self.main_plot.plot(frequency[visible], (original+pending["delta"])[visible],
-                                color=colors["planned"], dashed=True, name=f"待导出估计 · {plan['destination']}")
-                except (ValueError, KeyError, IndexError, TypeError) as exc:
-                    difference_error = str(exc)
-        if has_target and self.curve_checks["target"].isChecked():
-            target = self.targets[target_index]
-            target_values = np.asarray(target.spl_values)
-            target_values = target_values-np.interp(np.log(1000), np.log(target.frequencies), target_values)
-            self.main_plot.plot(target.frequencies, target_values, color=colors["target"], dashed=True,
-                                name="目标频响 · 1kHz 对齐")
-        show_correction = self.curve_checks["correction"].isChecked() or not has_measurement
-        if show_correction and (doc.raw or doc.filters):
-            self.main_plot.plot(frequency, eq_values, color=colors["correction"], name="修正 EQ · 0dB 基准")
-        self._update_tables(doc, records)
-        self._update_chrome(doc, bank, key, has_measurement, has_target, len(self.session.firmware_plans))
+        m, t = self.measurement_combo.currentIndex(), self.target_combo.currentIndex()
+        checks = {name: action.isChecked() for name, action in self.curve_checks.items()}
         raw_nodes = self.session.view_options.get("raw_nodes", len(doc.raw) <= 64)
-        legend = self._legend(doc, bank, has_measurement, has_target, bool(difference), planned_curve,
-                              show_correction, raw_nodes)
+        scene = compose(View(
+            doc=doc, rate=fs, checks=checks, colors=self.theme["curves"], tokens=self.theme["tokens"],
+            measurement=self.measurements[m] if 0 <= m < len(self.measurements) else None,
+            target=self.targets[t] if 0 <= t < len(self.targets) else None,
+            preview=self.correction_preview[0] if self.correction_preview else None,
+            bank=bank, key=key, state_index=self.state_combo.currentIndex(), region=self.region_combo.currentText(),
+            plans=self.session.firmware_plans, dac_mode=self.dac_mode(), difference=self.difference,
+            relative=self.relative_check.isChecked(), raw_nodes=raw_nodes,
+            reference_assumed=self.reference_assumed.isChecked()))
+        self.main_plot.clear_curves()
+        for curve in scene.curves:
+            self.main_plot.plot(curve["x"], curve["y"], color=curve["color"], name=curve["name"],
+                                dashed=curve["dashed"], width=curve["width"])
+        self._update_tables(doc, scene.records)
+        self._update_chrome(doc, bank, key, scene.has_measurement, scene.has_target, len(self.session.firmware_plans))
+        frequency, base = scene.frequency, scene.base
         self.main_plot.setLabel("left", "dB · EQ 增益／相对声压")
         self.main_plot.set_editor(
             label=f"调音 · {fs/1000:g} kHz"+(f" · {self.region_combo.currentText()}" if bank else ""),
             filters=[asdict(f) for f in doc.filters], raw=doc.raw, rawNodes=bool(raw_nodes),
-            nodeBase=self.main_plot.offsets(frequency, base+raw_values),
+            nodeBase=self.main_plot.offsets(frequency, base+scene.raw_values),
             rawBase=self.main_plot.offsets(frequency, base),
-            addBase=self.main_plot.offsets(frequency, base+eq_values), bands=bands,
-            splOffset=spl_offset if has_measurement and not self.relative_check.isChecked() else None,
-            legend=legend, notice=self._notice(difference, difference_error, has_measurement),
+            addBase=self.main_plot.offsets(frequency, base+scene.eq_values), bands=scene.bands,
+            splOffset=scene.spl_offset, legend=scene.legend, notice=scene.notice,
             dacMode={"value": self.dac_mode(), "options": [{"value": k, "label": t} for k, t in DAC_MODES]}
-            if bank and (self.curve_checks["dac1"].isChecked() or self.curve_checks["dac2"].isChecked()) else None,
+            if bank and (checks["dac1"] or checks["dac2"]) else None,
             empty="还没有曲线：导入或在线选择原始测量，或者在图上双击添加 PEQ。",
             actions=[{"label": "导入测量…", "command": "import_measurements"},
                      {"label": "导入 EQ…", "command": "import_eq"},
                      {"label": "打开固件…", "command": "open_firmware"}])
-
-    def _legend(self, doc, bank, has_measurement, has_target, has_difference, planned_curve, show_correction,
-                raw_nodes):
-        colors = self.theme["curves"]
-        items = []
-
-        def add(key, title, group, checked, dashed=False, hint=None, color=None, **extra):
-            items.append({"key": key, "label": title, "group": group, "checked": bool(checked), "dashed": dashed,
-                          "color": color or colors.get(key, self.theme["tokens"]["muted"]), "hint": hint, **extra})
-        checks = {key: action.isChecked() for key, action in self.curve_checks.items()}
-        if has_measurement:
-            add("original", "原始实测", "acoustic", checks["original"], hint="人工耳实测，1 kHz 对齐")
-            if has_difference:
-                add("current", "当前固件估计", "acoustic", checks["current"], True,
-                    "实测 + 当前固件相对测量参考的数字差分（模型估计）")
-            add("estimated", "编辑后估计", "acoustic", checks["estimated"], hint="估计值，不是实测")
-            if planned_curve:
-                add("planned", "待导出估计", "acoustic", checks["planned"], True, "按待写入的固件参数计算的估计")
-            if self.correction_preview:
-                add("preview", "生成预览", "acoustic", checks["preview"], True,
-                    "③ 中生成设置的预览，应用前不会改变修正 EQ")
-        if has_target:
-            add("target", "目标", "acoustic", checks["target"], True)
-        if doc.raw or doc.filters:
-            add("correction", "修正 EQ", "digital", show_correction, hint="数字滤波增益，0 dB 为基准"
-                if has_measurement else "没有实测时总是显示修正曲线", locked=not has_measurement)
-        if bank:
-            for output in ("1", "2"):
-                add("dac"+output, f"DAC{output}", "digital", checks["dac"+output],
-                    hint=f"输出{output} 的数字滤波链；仅控制显示，不改变最终拟合覆盖范围")
-        if doc.raw:
-            add("raw_nodes", f"RAW 节点 {len(doc.raw)}", "edit", raw_nodes, color=self.theme["tokens"]["raw-node"],
-                dot=True, hint="显示可拖动的 GraphicEQ 节点")
-        if has_measurement:
-            add("spl", "SPL 刻度", "axis", not self.relative_check.isChecked(), color=self.theme["tokens"]["muted"],
-                hint="在右侧显示绝对声压刻度")
-        return items
-
-    def _notice(self, difference, difference_error, has_measurement):
-        if difference and has_measurement:
-            assumed = self.reference_assumed.isChecked()
-            mode = difference["mode"]
-            short = mode.split("；")[0].split("，")[0]
-            return {"text": ("假定参考 · " if assumed else "")+short,
-                    "detail": ("参考关系为假定；" if assumed else "")+mode+"。编辑后估计 = 当前固件估计 + 修正；"
-                              "橙色虚线来自待写入参数。所有估计都不是耳机实测。",
-                    "tone": "warn" if assumed or "近似" in mode else "info"}
-        if difference_error:
-            return {"text": "固件差分未计算", "detail": difference_error+"。编辑后曲线暂为实测＋修正。", "tone": "warn"}
-        if has_measurement:
-            return {"text": "编辑后估计 = 实测＋修正",
-                    "detail": "绑定参考固件后加入当前固件差分；所有曲线共享频率轴和 dB 比例。", "tone": "info"}
-        return None
 
     def closeEvent(self, event):
         if self.workers or self.network_workers:
