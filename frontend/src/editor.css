@@ -29,6 +29,8 @@ button.on { background: var(--accent-soft); border-color: var(--accent); }
   color: var(--muted); background: transparent; border: 1px solid var(--border); }
 .chip.on { color: var(--text); background: var(--surface-2); }
 .chip:not(.on) .swatch { opacity: .35; }
+.chip:disabled { cursor: default; opacity: .8; }
+.chip:disabled:hover { border-color: var(--border); }
 .swatch { display: inline-block; width: 16px; height: 0; border-top: 3px solid var(--c); border-radius: 2px; }
 .swatch.dashed { border-top-style: dashed; border-top-width: 2px; }
 .swatch.dot { width: 8px; height: 8px; border: 2px solid var(--c); border-radius: 50%; }

@@ -8,7 +8,7 @@ export function Legend({ items, dacMode, onToggle, onDacMode }) {
     if (group !== null && item.group !== group) children.push(<span className="sep" key={`sep-${item.key}`} />)
     group = item.group
     children.push(<button key={item.key} type="button" className={`chip${item.checked ? ' on' : ''}`}
-      aria-pressed={item.checked} title={item.hint || item.label} data-key={item.key}
+      aria-pressed={item.checked} title={item.hint || item.label} data-key={item.key} disabled={item.locked}
       onClick={() => onToggle(item.key, !item.checked)}>
       <i className={`swatch${item.dashed ? ' dashed' : ''}${item.dot ? ' dot' : ''}`} style={{ '--c': item.color }} />
       {item.label}</button>)

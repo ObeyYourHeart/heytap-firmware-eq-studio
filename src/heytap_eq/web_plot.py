@@ -93,14 +93,16 @@ class ResponsePlot(QtWebEngineWidgets.QWebEngineView):
         # The SVG grid already draws the zero reference.
         pass
 
-    def plot(self, frequency, values, color="#efb55a", name="", dashed=False):
+    def plot(self, frequency, values, color="#efb55a", name="", dashed=False, width=None):
         points = np.column_stack((frequency, values))
         if len(points) < 2:
             return
         if not np.all(np.isfinite(points)):
             raise ValueError("Non-finite plot points")
-        self.curves.append({"name": name, "points": points.tolist(),
-                            "color": color, "dashed": bool(dashed)})
+        curve = {"name": name, "points": points.tolist(), "color": color, "dashed": bool(dashed)}
+        if width:
+            curve["width"] = float(width)
+        self.curves.append(curve)
 
     def listDataItems(self):
         return list(self.curves)

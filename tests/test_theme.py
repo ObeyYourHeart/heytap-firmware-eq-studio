@@ -47,3 +47,12 @@ def test_system_mode_follows_environment_and_bad_preferences_fall_back(tmp_path)
     assert theme.load(path) == {"mode": "dark", "accent": "violet"}
     web = theme.web(theme.resolve(theme.load(path)))
     assert web["mode"] == "dark" and web["tokens"]["accent"] == theme.ACCENTS["violet"][1]["dark"]
+
+
+def test_arrow_icons_follow_the_theme_and_are_referenced_by_the_style_sheet():
+    dark, light = (theme.resolve({"mode": m}) for m in ("dark", "light"))
+    assert theme.icon_svgs(dark)["down"] != theme.icon_svgs(light)["down"]
+    assert dark["tokens"]["muted"] in theme.icon_svgs(dark)["up"]
+    sheet = theme.stylesheet(dark, {"down": "C:/with space/down.svg", "up": "C:/with space/up.svg"})
+    assert 'url("C:/with space/down.svg")' in sheet and "QAbstractSpinBox::up-arrow" in sheet
+    assert "::down-arrow" not in theme.stylesheet(dark)

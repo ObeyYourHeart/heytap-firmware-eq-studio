@@ -31,6 +31,12 @@ def main(argv=None):
     app = QtWidgets.QApplication([sys.argv[0]])
     app.setApplicationName("HeyTap Firmware EQ Studio")
     app.setOrganizationName("HeyTapEQStudio")
+    # Fusion draws style sheets and palettes the same way on every platform and theme.
+    app.setStyle("Fusion")
+    translator = QtCore.QTranslator(app)
+    if translator.load(QtCore.QLocale("zh_CN"), "qtbase", "_",
+                       QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(translator)
     auto_path = args.report.parent/"smoke-project.json" if args.smoke_test else None
     window = MainWindow(recover=not args.smoke_test, auto_path=auto_path)
     app.aboutToQuit.connect(window.deleteLater)
@@ -47,7 +53,6 @@ def main(argv=None):
         window.set_measurements([Measurement("Synthetic test fixture", [20, 1000, 20000], [80, 90, 80]).validate()])
 
         window.set_targets([Measurement("Synthetic target", [20, 1000, 20000], [83, 90, 78]).validate()])
-        window.tabs.setCurrentIndex(0)
 
         attempts = 0
 

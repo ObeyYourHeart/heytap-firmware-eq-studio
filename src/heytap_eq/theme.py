@@ -86,9 +86,39 @@ def resolve(preferences, system_dark=True):
             "tokens": tokens, "curves": dict(CURVES[mode])}
 
 
-def stylesheet(theme):
-    t = theme["tokens"]
+ARROWS = {"down": "M1.5 1.5l4 4 4-4", "up": "M1.5 5.5l4-4 4 4"}
+
+
+def icon_svgs(theme):
+    """Arrow glyphs in the muted text colour; the shell writes them next to its settings."""
+    color = theme["tokens"]["muted"]
+    return {name: f'<svg xmlns="http://www.w3.org/2000/svg" width="11" height="7" viewBox="0 0 11 7">'
+                  f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" '
+                  f'stroke-linejoin="round"/></svg>' for name, path in ARROWS.items()}
+
+
+def _arrows(icons):
+    if not icons:
+        return ""
     return f"""
+QComboBox {{ padding-right: 24px; }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 22px; border: 0; }}
+QComboBox::down-arrow {{ image: url("{icons['down']}"); width: 11px; height: 7px; }}
+QAbstractSpinBox {{ padding-right: 20px; }}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ subcontrol-origin: border; width: 18px; border: 0;
+    background: transparent; }}
+QAbstractSpinBox::up-button {{ subcontrol-position: top right; }}
+QAbstractSpinBox::down-button {{ subcontrol-position: bottom right; }}
+QAbstractSpinBox::up-arrow {{ image: url("{icons['up']}"); width: 9px; height: 6px; }}
+QAbstractSpinBox::down-arrow {{ image: url("{icons['down']}"); width: 9px; height: 6px; }}
+QToolButton::menu-indicator {{ image: url("{icons['down']}"); width: 9px; height: 6px;
+    subcontrol-position: right center; subcontrol-origin: padding; }}
+"""
+
+
+def stylesheet(theme, icons=None):
+    t = theme["tokens"]
+    return _arrows(icons)+f"""
 QMainWindow, QDialog {{ background: {t['bg']}; }}
 QWidget {{ color: {t['text']}; font-size: 12px; }}
 QWidget#rail, QWidget#railBody {{ background: {t['bg']}; }}

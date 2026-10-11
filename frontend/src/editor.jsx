@@ -181,9 +181,10 @@ function Editor() {
             {(data.bands || []).map((band, i) => {
               const left = clamp(xAt(band.low, width, view), 0, width)
               const right = clamp(xAt(band.high, width, view), 0, width)
+              const end = right > width - 150
               return <g key={`band-${i}`} pointerEvents="none" className="band">
                 <rect x={left} width={Math.max(0, right - left)} height={height} />
-                <text x={left + 5} y={15}>{band.label}</text></g>
+                <text x={end ? right - 6 : left + 6} y={15} textAnchor={end ? 'end' : 'start'}>{band.label}</text></g>
             })}
             {curves.map((c, i) => <g key={c.name} clipPath={`url(#curve-clip-${i})`}>
               <FrequencyResponseCurve color={c.color} lineWidth={c.width || 2} dotted={c.dashed} magnitudes={c.magnitudes} /></g>)}
@@ -219,7 +220,7 @@ function Editor() {
       </section>}
     </div>
     <footer className="footer">
-      <span className="readout">{pointer ? `${formatHz(pointer.frequency)} Hz · ${pointer.gain.toFixed(2)} dB` : '—'}</span>
+      <span className={pointer ? 'readout' : ''}>{pointer ? `${formatHz(pointer.frequency)} Hz · ${pointer.gain.toFixed(2)} dB` : '悬停查看读数'}</span>
       <span className="range">{formatHz(view.minFreq)}–{formatHz(view.maxFreq)} Hz · {view.minGain.toFixed(0)}…{view.maxGain.toFixed(0)} dB</span>
     </footer>
   </main>
