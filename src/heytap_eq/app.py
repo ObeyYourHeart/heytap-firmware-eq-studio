@@ -34,8 +34,9 @@ def main(argv=None):
     # Fusion draws style sheets and palettes the same way on every platform and theme.
     app.setStyle("Fusion")
     translator = QtCore.QTranslator(app)
-    if translator.load(QtCore.QLocale("zh_CN"), "qtbase", "_",
-                       QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.LibraryPath.TranslationsPath)):
+    translated = translator.load(QtCore.QLocale("zh_CN"), "qtbase", "_",
+                                 QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.LibraryPath.TranslationsPath))
+    if translated:
         app.installTranslator(translator)
     auto_path = args.report.parent/"smoke-project.json" if args.smoke_test else None
     window = MainWindow(recover=not args.smoke_test, auto_path=auto_path)
@@ -83,6 +84,13 @@ def main(argv=None):
                 reference = builtin_reference()
                 assert reference and len(reference["presets"]) == 6
                 assert not any(k.startswith(("PyQt5", "PyQt6", "PySide2")) for k in sys.modules)
+                # Packaged builds must ship what the themed shell loads at run time.
+                from PySide6 import QtGui
+
+                from heytap_eq.widgets import write_icons
+
+                icons = write_icons(window.theme, args.report.parent/"theme-icons")
+                svg_icons = all(not QtGui.QPixmap(path).isNull() for path in icons.values())
                 args.report.write_text(json.dumps({
                     "status": "passed", "frozen": is_packaged(), "packager": packager(),
                     "qt": QtCore.qVersion(), "qt_binding": "PySide6",
@@ -98,6 +106,8 @@ def main(argv=None):
                     "single_plot": window.digital_plot is window.acoustic_plot,
                     "reference_template_presets": len(reference["presets"]),
                     "plot_engine": "DSSSP 0.8.0", "web_editor": web,
+                    "svg_icons": svg_icons, "qt_translation_zh_CN": translated,
+                    "blas_threads": os.environ.get("OPENBLAS_NUM_THREADS"),
                 }, indent=2), encoding="utf-8")
             except Exception as exc:
                 result = 1

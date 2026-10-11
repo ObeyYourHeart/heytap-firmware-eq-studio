@@ -42,6 +42,10 @@ assert data["plot_engine"] == "DSSSP 0.8.0"
 assert data["web_editor"]["ready"] and data["web_editor"]["svgPaths"] >= 3
 assert data["web_editor"]["height"] >= 250
 assert data["service_configured"] == (builtin_authorization() is not None)
+# Themed arrows are SVG files (qsvg plugin + Qt6Svg), dialogs use the zh_CN qtbase catalogue,
+# and the package sets single-threaded BLAS before numpy loads (this step does not set it).
+assert data["svg_icons"] and data["qt_translation_zh_CN"], data
+assert "OPENBLAS_NUM_THREADS" not in child_env and data["blas_threads"] == "1", data
 data["executable_sha256"] = hashlib.sha256(exe.read_bytes()).hexdigest()
 data["gui_smoke_elapsed_seconds"] = elapsed
 report.write_text(json.dumps(data, indent=2))
